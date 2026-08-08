@@ -31,7 +31,26 @@ local C = ffi.C
 -- for the wrong architecture, most likely: execvp hands it to /bin/sh, which
 -- tries to read the machine code as a shell script and reports a syntax
 -- error. execv simply fails, which is both truthful and easier to explain.
-ffi.cdef[[ int execv(const char *, char *const[]); ]]
+ffi.cdef[[
+    int execv(const char *, char *const[]);
+    int open(const char *, int, int);
+]]
+
+-- O_WRONLY|O_CREAT|O_TRUNC on Linux, pre-combined. The engine's own
+-- complaints -- a missing network, an out-of-memory kill, a bad file -- go to
+-- stderr, and without somewhere to put them a failed start is just silence.
+local O_WRONLY_CREAT_TRUNC = 0x241
+
+--- Where to leave the engine's stderr: beside the engine itself.
+-- Deliberately not /tmp. On a Kobo /tmp is on the internal filesystem, which
+-- is invisible when the device is plugged into a computer, whereas the plugin
+-- directory is on the partition USB exports -- so a log written here can be
+-- read off the device even when its Wi-Fi is down, which is when a failed
+-- start is most likely to need explaining.
+local function stderrLogFor(exe)
+    local dir = exe:match("^(.*)/[^/]*$")
+    return (dir or ".") .. "/engine-stderr.log"
+end
 
 --- Collect an exited engine, so it does not linger as a zombie.
 --
@@ -108,31 +127,75 @@ function UciEngine:isDead() return self.state == "dead" end
 -- The child is forked by KOReader's helper -- which also puts it in its own
 -- process group and nices it, both of which we want -- and then replaced by
 -- the engine with its stdin and stdout wired to our pipes.
+--
+-- We make both pipes ourselves rather than asking runInSubProcess for them.
+-- Its 'bidi' mode is recent: older KOReaders create a single child-to-parent
+-- pipe and call the child function with two arguments instead of three, so
+-- the descriptor we would redirect stdin from arrives as nil and the child
+-- dies in dup2 before it can exec. The parent's write end is missing too, so
+-- there is no way to say "uci" in the first place. Talking about a plugin
+-- that fails on exactly the devices it is written for, the fix is to depend
+-- on nothing newer than fork: a pipe made here is inherited across it either
+-- way.
 function UciEngine:start()
     if self.pid then return true end
     if self.state == "dead" then return false, "engine failed earlier" end
 
     local exe = self.path
-    local pid, read_fd, write_fd = ffiutil.runInSubProcess(
-        function(_pid, child_write_fd, child_read_fd)
-            C.dup2(child_read_fd, 0)
-            C.dup2(child_write_fd, 1)
-            -- The engine's own path is argv[0]; some engines look beside it
-            -- for their network file.
-            local argv0 = ffi.new("char[?]", #exe + 1, exe)
-            local argv = ffi.new("char*[2]")
-            argv[0] = argv0
-            argv[1] = nil
-            C.execv(argv0, argv)
-            -- Only reachable if exec failed; the parent will see the pipe
-            -- close and give up on the handshake.
-            C._exit(127)
-        end, "bidi")
+    local errlog = stderrLogFor(exe)
 
-    if not pid or pid == false then
+    -- [0] is the read end, [1] the write end.
+    local to_child, from_child = ffi.new("int[2]"), ffi.new("int[2]")
+    if C.pipe(to_child) ~= 0 then
         self.state = "dead"
-        return false, tostring(read_fd)
+        return false, "could not create a pipe to the engine"
     end
+    if C.pipe(from_child) ~= 0 then
+        C.close(to_child[0]); C.close(to_child[1])
+        self.state = "dead"
+        return false, "could not create a pipe from the engine"
+    end
+    local child_read_fd, parent_write_fd = to_child[0], to_child[1]
+    local parent_read_fd, child_write_fd = from_child[0], from_child[1]
+
+    local pid = ffiutil.runInSubProcess(function()
+        C.dup2(child_read_fd, 0)
+        C.dup2(child_write_fd, 1)
+        -- Keep the engine's stderr somewhere we can read afterwards.
+        -- Failing to open it is not worth aborting the start for.
+        local errfd = C.open(errlog, O_WRONLY_CREAT_TRUNC, 420)
+        if errfd >= 0 then
+            C.dup2(errfd, 2)
+            if errfd > 2 then C.close(errfd) end
+        end
+        -- The ends this process does not use. Leaving the write end open here
+        -- would keep the pipe alive after the engine exits, and the parent
+        -- would wait for an EOF that never comes.
+        C.close(parent_read_fd)
+        C.close(parent_write_fd)
+        -- The engine's own path is argv[0]; some engines look beside it
+        -- for their network file.
+        local argv0 = ffi.new("char[?]", #exe + 1, exe)
+        local argv = ffi.new("char*[2]")
+        argv[0] = argv0
+        argv[1] = nil
+        C.execv(argv0, argv)
+        -- Only reachable if exec failed; the parent will see the pipe
+        -- close and give up on the handshake.
+        C._exit(127)
+    end)
+
+    -- The child has its own copies now.
+    C.close(child_read_fd)
+    C.close(child_write_fd)
+
+    if not pid or pid == false or pid < 0 then
+        C.close(parent_read_fd)
+        C.close(parent_write_fd)
+        self.state = "dead"
+        return false, "could not start the engine process"
+    end
+    local read_fd, write_fd = parent_read_fd, parent_write_fd
 
     self.pid, self.read_fd, self.write_fd = pid, read_fd, write_fd
     self.state = "handshake"
