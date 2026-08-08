@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Build the plugin's piece images from a chess sprite sheet.
 
-The sheet is expected to be a 6x2 grid -- king, queen, bishop, knight, rook,
-pawn across; white on the top row, black on the bottom.
+The sheet is a grid of piece icons. Sheets disagree about how that grid is
+arranged, so both the shape and the reading order are options rather than
+assumptions: `--grid 6x2 --order wk,wq,wb,...` describes any of them.
 
 Two things here are less obvious than they look:
 
@@ -15,8 +16,13 @@ actually connected to the outside.
 square independently would blow the pawn up to the same height as the queen
 and destroy the set's proportions.
 
-Usage:  python3 tools/import_pieces.py [--sheet assets/sprite_sheet.png]
-                                       [--size 256] [--out kobochess.koplugin/pieces]
+Usage:
+    # the 6x2 sheet: white row then black row, K Q B N R P across
+    python3 tools/import_pieces.py --sheet assets/sprite_sheet.png
+
+    # a 4x3 sheet read left-to-right, top-to-bottom
+    python3 tools/import_pieces.py --sheet rendered.png --grid 4x3 \\
+        --order wk,wq,wr,wb,wn,wp,bk,bq,br,bb,bn,bp
 """
 
 import argparse
@@ -25,8 +31,13 @@ from collections import deque
 
 from PIL import Image
 
-# Column order in the sheet, left to right.
-COLUMNS = ["k", "q", "b", "n", "r", "p"]
+# The default sheet: 6 columns by 2 rows, white row above black, K Q B N R P
+# across. Cells are named in reading order -- left to right, top to bottom.
+DEFAULT_GRID = (6, 2)
+DEFAULT_ORDER = ["wk", "wq", "wb", "wn", "wr", "wp",
+                 "bk", "bq", "bb", "bn", "br", "bp"]
+
+VALID_NAMES = {c + k for c in "wb" for k in "kqrbnp"}
 
 # A pixel this light, and connected to the border, is background. The sheet
 # may carry a baked-in "transparency" checkerboard rather than real alpha,
@@ -76,21 +87,25 @@ def strip_background(cell):
     return cell
 
 
-def extract(sheet_path):
+def extract(sheet_path, grid, order):
     """Return {name: tightly-cropped RGBA image} for all twelve pieces."""
+    cols, rows = grid
     sheet = Image.open(sheet_path).convert("RGBA")
     W, H = sheet.size
-    cw, ch = W / len(COLUMNS), H / 2
+    cw, ch = W / cols, H / rows
 
     pieces = {}
-    for row, colour in enumerate(("w", "b")):
-        for col, kind in enumerate(COLUMNS):
-            box = (int(col * cw), int(row * ch), int((col + 1) * cw), int((row + 1) * ch))
-            cell = strip_background(sheet.crop(box))
-            bbox = cell.getbbox()
-            if bbox is None:
-                raise SystemExit(f"error: cell {colour}{kind} is empty after background removal")
-            pieces[colour + kind] = cell.crop(bbox)
+    for index, name in enumerate(order):
+        col, row = index % cols, index // cols
+        box = (int(col * cw), int(row * ch), int((col + 1) * cw), int((row + 1) * ch))
+        cell = strip_background(sheet.crop(box))
+        bbox = cell.getbbox()
+        if bbox is None:
+            raise SystemExit(
+                f"error: cell {col},{row} ({name}) is empty after background removal.\n"
+                "       Check --grid: if the cells do not line up with the icons,\n"
+                "       pieces get split across cell boundaries.")
+        pieces[name] = cell.crop(bbox)
     return pieces
 
 
@@ -100,12 +115,32 @@ def main():
     ap.add_argument("--sheet", default="assets/sprite_sheet.png")
     ap.add_argument("--size", type=int, default=256, help="output canvas, px (default 256)")
     ap.add_argument("--out", default="kobochess.koplugin/pieces")
+    ap.add_argument("--grid", default="%dx%d" % DEFAULT_GRID,
+                    help="sheet layout as COLSxROWS (default %(default)s)")
+    ap.add_argument("--order", default=",".join(DEFAULT_ORDER),
+                    help="the twelve cells in reading order, e.g. wk,wq,...,bp")
     args = ap.parse_args()
 
     if not os.path.exists(args.sheet):
         raise SystemExit(f"error: no sprite sheet at {args.sheet}")
 
-    pieces = extract(args.sheet)
+    try:
+        cols, rows = (int(v) for v in args.grid.lower().split("x"))
+    except ValueError:
+        raise SystemExit(f"error: --grid should look like 6x2, got {args.grid!r}")
+
+    order = [name.strip() for name in args.order.split(",") if name.strip()]
+    unknown = sorted(set(order) - VALID_NAMES)
+    if unknown:
+        raise SystemExit(f"error: unknown piece name(s) in --order: {', '.join(unknown)}")
+    if sorted(order) != sorted(VALID_NAMES):
+        raise SystemExit(
+            "error: --order must name all twelve pieces exactly once "
+            f"(got {len(order)}: {args.order})")
+    if len(order) > cols * rows:
+        raise SystemExit(f"error: --order has {len(order)} cells but the grid holds {cols * rows}")
+
+    pieces = extract(args.sheet, (cols, rows), order)
 
     # One scale factor for the whole set, so a pawn stays smaller than a queen.
     max_w = max(p.width for p in pieces.values())

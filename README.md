@@ -12,6 +12,8 @@ NickelMenu entry so it opens in two taps from the home screen.
 
 <p align="center">
   <img src="device.jpg" alt="Kobo Chess running on a Kobo Elipsa" width="480">
+  <br>
+  <sub>On the device. This photo predates the current piece set — see below.</sub>
 </p>
 
 Built and tested for a **Kobo Elipsa (v1)** — 1404×1872, 10.3". The layout is
@@ -212,26 +214,35 @@ touching it as little as possible:
 
 ## Piece artwork
 
-The shipped pieces are imported from `assets/sprite_sheet.png` by
-`tools/import_pieces.py`:
+**Piece artwork by [Vecteezy.com](https://www.vecteezy.com/)**, used under the
+Vecteezy Free License, which requires that attribution. It is credited here,
+and in the plugin's description inside KOReader.
+
+The twelve images in `kobochess.koplugin/pieces/` are derived from a chess icon
+set downloaded from Vecteezy as EPS. The source file is *not* in this
+repository: a stock licence covers using an asset, not redistributing the asset
+itself. To regenerate the pieces, download the set, rasterise the EPS and run
+the importer:
 
 ```sh
-python3 tools/import_pieces.py --size 256
+gs -dSAFER -dBATCH -dNOPAUSE -dEPSCrop -sDEVICE=pngalpha -r144 \
+   -o sheet.png chess-icon-set.eps
+
+python3 tools/import_pieces.py --sheet sheet.png --grid 4x3 \
+    --order wk,wq,wr,wb,wn,wp,bk,bq,br,bb,bn,bp
 ```
 
-The importer removes the sheet's background with a flood fill from the borders
-— a plain colour key cannot work, because the white pieces are white inside as
-well as out — and scales all twelve by a single shared factor, so a pawn stays
-smaller than a queen.
+The importer removes the sheet's background with a flood fill inwards from the
+borders — a plain colour key cannot work, because the white pieces are white
+inside as well as out — then scales all twelve by a single shared factor and
+stands them on a common baseline. `--grid` and `--order` describe the sheet's
+layout, since sheets disagree about both.
 
-> **Licence:** that sprite sheet came from a clip-art aggregator and its
-> provenance is unknown. That is fine for a plugin on your own device, but
-> check the rights before publishing this repository or redistributing the
-> images.
+### An original set, with no attribution to make
 
-`tools/gen_pieces.py` draws an entirely original set instead — no third-party
-artwork, and being vector-defined it re-renders crisply at any size. It is
-kept as the licence-clean fallback:
+`tools/gen_pieces.py` draws a complete set from scratch — no third-party
+artwork, nothing to credit, and being vector-defined it re-renders crisply at
+any size:
 
 ```sh
 python3 tools/gen_pieces.py --size 320
