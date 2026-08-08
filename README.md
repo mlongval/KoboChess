@@ -1,5 +1,6 @@
 # Kobo Chess
 
+![version](https://img.shields.io/badge/version-0.01-c05621?style=flat-square)
 ![platform](https://img.shields.io/badge/platform-Kobo%20eReader-2f3437?style=flat-square)
 ![KOReader](https://img.shields.io/badge/KOReader-plugin-3b7dd8?style=flat-square)
 ![NickelMenu](https://img.shields.io/badge/NickelMenu-entry-6b4fbb?style=flat-square)
