@@ -1,0 +1,8 @@
+# Symlink into the session scratch directory under /tmp; not part of the project.
+/scratch
+
+# Exported games.
+*.pgn
+
+__pycache__/
+*.pyc

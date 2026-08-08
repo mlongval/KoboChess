@@ -1,0 +1,11 @@
+# Kobo Chess — NickelMenu entry.
+#
+# Copy this file to /mnt/onboard/.adds/nm/kobochess on the device, and
+# kobochess-launch.sh to /mnt/onboard/.adds/kobochess-launch.sh.
+# `install.sh` does both for you.
+#
+# Adds "Chess" to the main menu (the one from the home screen's ≡ button).
+# It starts KOReader with a flag that makes the plugin open the board
+# immediately, so the game is two taps from the Kobo home screen.
+
+menu_item :main :Chess :cmd_spawn :quiet:exec /bin/sh /mnt/onboard/.adds/kobochess-launch.sh
