@@ -57,8 +57,11 @@ if [[ ! -d "$PLUGIN_DIR" ]]; then
     echo "error: $PLUGIN_DIR not found (run this from the project root)" >&2
     exit 1
 fi
-if [[ ! -f "$PLUGIN_DIR/pieces/wk.png" ]]; then
-    echo "error: piece images are missing -- run: python3 tools/gen_pieces.py" >&2
+# Piece sets live one folder deep -- pieces/<set>/wk.png -- and whichever ones
+# are present get copied, so a set built from artwork that cannot be committed
+# still travels to the device.
+if ! compgen -G "$PLUGIN_DIR/pieces/*/wk.png" >/dev/null; then
+    echo "error: no piece set in $PLUGIN_DIR/pieces/ -- run: python3 tools/gen_pieces.py" >&2
     exit 1
 fi
 

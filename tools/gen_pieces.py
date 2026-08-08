@@ -18,6 +18,10 @@ import os
 
 from PIL import Image, ImageDraw, ImageFilter
 
+# Both generators write sets the same way and preview them the same way, so
+# the layout of pieces/ and the contact sheet are defined in one place.
+from import_pieces import PIECES_ROOT, contact_sheet
+
 # Internal drawing resolution. Everything is described in a 1000x1000 space and
 # drawn at SS times that, then downscaled with a good filter.
 UNIT = 1000
@@ -363,37 +367,30 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--size", type=int, default=256,
                     help="output image size in pixels (default 256)")
-    ap.add_argument("--out", default="kobochess.koplugin/pieces",
-                    help="output directory")
+    ap.add_argument("--set", default="drawn", dest="set_name",
+                    help="name of the piece set to write (default %(default)s); "
+                         "it becomes a folder under pieces/ that the plugin "
+                         "offers under Options")
+    ap.add_argument("--out", help="write here instead of pieces/<set>")
     args = ap.parse_args()
 
-    os.makedirs(args.out, exist_ok=True)
+    out_dir = args.out or os.path.join(PIECES_ROOT, args.set_name)
+
+    os.makedirs(out_dir, exist_ok=True)
     for letter, builder in PIECES.items():
         shapes = builder()
         for colour, is_white in (("w", True), ("b", False)):
             img = render(shapes, is_white, args.size)
-            path = os.path.join(args.out, f"{colour}{letter}.png")
+            path = os.path.join(out_dir, f"{colour}{letter}.png")
             img.save(path, "PNG", optimize=True)
             print(f"  {path}  {img.size[0]}x{img.size[1]}")
 
     # A contact sheet on a checkerboard, so both colours are visible against
     # both square shades -- a white background would hide the white pieces.
-    s = args.size
-    sheet = Image.new("RGBA", (s * 6, s * 2), (255, 255, 255, 255))
-    d = ImageDraw.Draw(sheet)
-    for col in range(6):
-        for row in range(2):
-            if (col + row) % 2 == 1:
-                d.rectangle((col * s, row * s, (col + 1) * s - 1, (row + 1) * s - 1),
-                            fill=(180, 180, 180, 255))
-    for col, letter in enumerate("pnbrqk"):
-        for row, colour in enumerate(("w", "b")):
-            piece = Image.open(os.path.join(args.out, f"{colour}{letter}.png"))
-            sheet.paste(piece, (col * s, row * s), piece)
     # Written to the working directory rather than into the plugin: it is for
     # reviewing the set, not for shipping to the device.
-    sheet_path = "pieces_preview.png"
-    sheet.save(sheet_path)
+    sheet_path = f"pieces_preview-{os.path.basename(out_dir)}.png"
+    contact_sheet(out_dir, args.size).save(sheet_path)
     print(f"  {sheet_path}  (preview only, not shipped)")
 
 

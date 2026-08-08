@@ -14,3 +14,15 @@ __pycache__/
 
 # Local review captures from the emulator.
 /preview-*.png
+
+# Piece sets are one folder each under pieces/, and any set can be installed
+# by dropping one there -- but only the two that are ours to redistribute are
+# tracked. A set built from third-party artwork stays on this machine, gets
+# copied to the device by install.sh like any other, and never reaches the
+# repository. Same for the contact sheets that go with them.
+/kobochess.koplugin/pieces/*/
+!/kobochess.koplugin/pieces/drawn/
+!/kobochess.koplugin/pieces/vecteezy/
+/pieces_preview-*.png
+!/pieces_preview-drawn.png
+!/pieces_preview-vecteezy.png

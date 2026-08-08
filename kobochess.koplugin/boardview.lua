@@ -210,6 +210,37 @@ function BoardView:freeRotatedWidgets()
     self.rotated_widgets = nil
 end
 
+--- Swap to a different set of piece images.
+-- Returns true if anything changed, so the caller knows whether to repaint.
+function BoardView:setPieceDir(dir)
+    if dir == self.piece_dir then return false end
+    self.piece_dir = dir
+    self:freePieceWidgets()
+    self:loadPieces()
+    return true
+end
+
+function BoardView:freePieceWidgets()
+    for _, widget in pairs(self.piece_widgets or {}) do
+        widget:free()
+    end
+    self.piece_widgets = nil
+    self:freeRotatedWidgets()
+end
+
+--- Rebuild the coordinate labels after `show_coordinates` has been changed.
+function BoardView:setShowCoordinates(show)
+    show = show and true or false
+    if show == self.show_coordinates then return false end
+    self.show_coordinates = show
+    if show then
+        self:buildCoordinateLabels()
+    else
+        self:freeCoordinateLabels()
+    end
+    return true
+end
+
 --- Rebuild if night mode has been toggled since the pieces were loaded.
 -- Returns true if anything changed.
 function BoardView:syncNightMode()
@@ -217,10 +248,7 @@ function BoardView:syncNightMode()
     if night == self.night_mode then return false end
     self.night_mode = night
     self.palette = SQUARES[night]
-    for _, widget in pairs(self.piece_widgets or {}) do
-        widget:free()
-    end
-    self:freeRotatedWidgets()
+    self:freePieceWidgets()
     self:loadPieces()
     self:buildCoordinateLabels()      -- their colour changes too
     return true
@@ -424,11 +452,7 @@ function BoardView:setLastMove(move)
 end
 
 function BoardView:onCloseWidget()
-    for _, widget in pairs(self.piece_widgets or {}) do
-        widget:free()
-    end
-    self.piece_widgets = nil
-    self:freeRotatedWidgets()
+    self:freePieceWidgets()
     self:freeCoordinateLabels()
 end
 

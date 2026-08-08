@@ -66,6 +66,9 @@ local STATUS_THROTTLE = 1.5
 -- Three is what actually clears the Elipsa's panel, measured on the device.
 local DEFAULT_FULL_REFRESH_EVERY = 3
 
+-- Used when nothing is saved and when a saved set has since been removed.
+local DEFAULT_PIECE_SET = "vecteezy"
+
 local REFRESH_CHOICES = {
     { 1, "Every move" },
     { 3, "Every 3 moves" },
@@ -83,6 +86,39 @@ local ChessWidget = InputContainer:extend{
 
 local function nowSeconds()
     return time.to_s(time.now())
+end
+
+--- The piece sets installed under `pieces/`.
+--
+-- Sets are folders rather than a list in the code, so adding one is a matter
+-- of dropping it in: build a set with the tools, reinstall, and it appears
+-- under Options. That also lets a set built from artwork that cannot be
+-- redistributed live on a device without living in the repository.
+local function findPieceSets(root)
+    local sets = {}
+    -- lfs.dir throws if the directory is missing, and hands back an iterator
+    -- plus the directory object it walks -- both are needed to drive the loop.
+    local ok, iter, dir_obj = pcall(lfs.dir, root)
+    if not ok then return sets end
+    for entry in iter, dir_obj do
+        if entry ~= "." and entry ~= ".." then
+            local dir = root .. "/" .. entry
+            -- One piece is enough to tell a set from a stray folder; a set
+            -- missing the rest would show gaps, which is visible immediately.
+            if lfs.attributes(dir, "mode") == "directory"
+               and lfs.attributes(dir .. "/wk.png", "mode") == "file" then
+                sets[#sets + 1] = entry
+            end
+        end
+    end
+    table.sort(sets)
+    return sets
+end
+
+--- Turn a set's folder name into something to put on a menu.
+local function prettySetName(name)
+    local text = name:gsub("[-_]", " ")
+    return (text:gsub("^%l", string.upper))
 end
 
 --- A CenterContainer that remembers where it was last painted.
@@ -122,10 +158,17 @@ function ChessWidget:init()
     self.hint_move = nil
 
     self.full_refresh_every = DEFAULT_FULL_REFRESH_EVERY
+    self.show_coordinates = true
     if self.settings then
         local saved = self.settings:readSetting("full_refresh_every")
         if type(saved) == "number" then self.full_refresh_every = saved end
+        local coords = self.settings:readSetting("show_coordinates")
+        if coords ~= nil then self.show_coordinates = coords end
     end
+
+    self.pieces_root = self.plugin_path .. "/pieces"
+    self.piece_sets = findPieceSets(self.pieces_root)
+    self.piece_set = self:chooseInitialPieceSet()
 
     if Device:hasKeys() then
         self.key_events = {
@@ -144,6 +187,25 @@ function ChessWidget:init()
     self:buildLayout()
     self:syncBoardToGame()
     self:updateStatus()
+end
+
+--- The set to open with: the saved one if it is still installed, otherwise the
+-- default, otherwise whatever is there.
+function ChessWidget:chooseInitialPieceSet()
+    local saved = self.settings and self.settings:readSetting("piece_set")
+    local have = {}
+    for _, name in ipairs(self.piece_sets) do have[name] = true end
+
+    if saved and have[saved] then return saved end
+    if have[DEFAULT_PIECE_SET] then return DEFAULT_PIECE_SET end
+    -- Nothing recognisable: fall back to the first set found, and to the
+    -- default name if there are none at all, so `piece_dir` is never nil and
+    -- the board reports missing images rather than crashing.
+    return self.piece_sets[1] or DEFAULT_PIECE_SET
+end
+
+function ChessWidget:pieceDir()
+    return self.pieces_root .. "/" .. self.piece_set
 end
 
 --- Build the widget tree. The board is sized from whatever vertical space is
@@ -174,23 +236,24 @@ function ChessWidget:buildLayout()
         max_width = self.screen_w - 2 * margin,
     }
 
+    -- One row, and everything that is not needed mid-game is behind the two
+    -- menus at either end. Every button taken off the row is a button's worth
+    -- of height given back to the board, which is the thing worth looking at.
     self.buttons = {}
-    local row1 = self:buildButtonRow({
-        { id = "new",   text = _("New game"), callback = function() self:onNewGame() end },
-        { id = "undo",  text = _("Undo"),     callback = function() self:onUndo() end },
-        { id = "flip",  text = _("Flip"),     callback = function() self:onFlip() end },
-        { id = "level", text = _("Level"),    callback = function() self:onChooseLevel() end },
-    }, margin)
-    local row2 = self:buildButtonRow({
-        { id = "hint",   text = _("Hint"),   callback = function() self:onHint() end },
-        { id = "resign", text = _("Resign"), callback = function() self:onResign() end },
-        { id = "pgn",    text = _("PGN"),    callback = function() self:onExportPgn() end },
+    local row = self:buildButtonRow({
+        { id = "game",  text = _("Game ▾"), callback = function() self:onGameMenu() end },
+        { id = "undo",  text = _("Undo"),   callback = function() self:onUndo() end },
+        { id = "hint",  text = _("Hint"),   callback = function() self:onHint() end },
+        { id = "flip",  text = _("Flip"),   callback = function() self:onFlip() end },
         -- Tap to clear ghosting now, hold to change how often it happens by
         -- itself. Ghosting is the one thing about an e-ink board that a user
-        -- can see and the program cannot, so it needs a manual override.
+        -- can see and the program cannot, so it needs a manual override, and
+        -- it stays on the row rather than in a menu because it is the one
+        -- thing you reach for while looking at a smeared board.
         { id = "refresh", text = _("Refresh"),
           callback = function() self:onForceRefresh() end,
           hold_callback = function() self:onChooseRefreshInterval() end },
+        { id = "options", text = _("Options ▾"), callback = function() self:onOptionsMenu() end },
     }, margin)
 
     -- Measure the chrome so the board can claim the rest.
@@ -198,8 +261,8 @@ function ChessWidget:buildLayout()
     local fixed_h = self.title_bar:getHeight()
         + self.status_widget:getSize().h
         + self.history_widget:getSize().h
-        + row1:getSize().h + row2:getSize().h
-        + span * 6
+        + row:getSize().h
+        + span * 5
 
     local avail_h = self.screen_h - fixed_h
     local board_size = math.min(self.screen_w - 2 * margin, avail_h)
@@ -220,7 +283,8 @@ function ChessWidget:buildLayout()
         -- With two humans across a table, the far player's pieces are drawn
         -- upside down so they read correctly from that side.
         rotate_far_side = self.game.two_player,
-        piece_dir = self.plugin_path .. "/pieces",
+        piece_dir = self:pieceDir(),
+        show_coordinates = self.show_coordinates,
     }
 
     -- Fixed-size containers keep the layout from reflowing when the text
@@ -247,9 +311,7 @@ function ChessWidget:buildLayout()
         VerticalSpan:new{ width = span },
         self.history_container,
         VerticalSpan:new{ width = span },
-        row1,
-        VerticalSpan:new{ width = span },
-        row2,
+        row,
     }
 
     self[1] = FrameContainer:new{
@@ -359,12 +421,11 @@ function ChessWidget:updateStatus(text)
     self.status_widget:setText(status)
     self.history_widget:setText(self.game:historyText(6))
 
-    -- Enable only what makes sense right now.
+    -- Enable only what makes sense right now. The two menus stay live: what
+    -- they hold that would be wrong mid-search is greyed out inside them,
+    -- which says why, where disabling the whole menu would not.
     self.buttons.undo:enableDisable(not self.thinking and self.game:canUndo())
     self.buttons.hint:enableDisable(not self.thinking and self.game:isPlayerTurn())
-    self.buttons.resign:enableDisable(not self.game:isOver())
-    self.buttons.new:enableDisable(not self.thinking)
-    self.buttons.level:enableDisable(not self.thinking)
 end
 
 --- Refresh everything except the board: the status line above it, and the
@@ -722,6 +783,63 @@ end
 -- Buttons
 --==========================================================================
 
+--- Show a one-item-per-row dialog. The dialog is a local rather than a field
+-- on the widget, so a callback always closes the dialog it belongs to even if
+-- another has been opened since.
+function ChessWidget:showMenu(title, entries)
+    local dialog
+    local buttons = {}
+    for _, entry in ipairs(entries) do
+        buttons[#buttons + 1] = { {
+            text = entry.text,
+            enabled = entry.enabled ~= false,
+            callback = function()
+                UIManager:close(dialog)
+                entry.callback()
+            end,
+        } }
+    end
+    dialog = ButtonDialog:new{
+        title = title,
+        title_align = "center",
+        buttons = buttons,
+    }
+    UIManager:show(dialog)
+    return true
+end
+
+--- Everything to do with the game being played.
+function ChessWidget:onGameMenu()
+    return self:showMenu(_("Game"), {
+        { text = _("New game"), enabled = not self.thinking,
+          callback = function() self:onNewGame() end },
+        { text = _("Resign"), enabled = not self.game:isOver(),
+          callback = function() self:onResign() end },
+        { text = _("Export PGN"),
+          callback = function() self:onExportPgn() end },
+        { text = _("Copy FEN"),
+          callback = function() self:onCopyFen() end },
+    })
+end
+
+--- Everything to do with how the game looks and plays.
+function ChessWidget:onOptionsMenu()
+    local level = Search.LEVELS[self.game.level]
+    return self:showMenu(_("Options"), {
+        { text = ("%s: %s"):format(_("Piece set"), prettySetName(self.piece_set)),
+          enabled = #self.piece_sets > 1,
+          callback = function() self:onChoosePieceSet() end },
+        { text = ("%s: %s"):format(_("Level"), level and level.name or "?"),
+          enabled = not self.thinking,
+          callback = function() self:onChooseLevel() end },
+        { text = _("Screen refresh"),
+          callback = function() self:onChooseRefreshInterval() end },
+        { text = self.show_coordinates and _("Hide coordinates")
+                                        or _("Show coordinates"),
+          callback = function() self:onToggleCoordinates() end },
+    })
+end
+
 function ChessWidget:onNewGame()
     if self.thinking then return true end
     local function start(colour, two_player)
@@ -749,35 +867,14 @@ function ChessWidget:onNewGame()
         end
     end
 
-    self.new_game_dialog = ButtonDialog:new{
-        title = _("New game"),
-        title_align = "center",
-        buttons = {
-            { {
-                text = _("Play as White"),
-                callback = function()
-                    UIManager:close(self.new_game_dialog)
-                    start(Board.WHITE, false)
-                end,
-            } },
-            { {
-                text = _("Play as Black"),
-                callback = function()
-                    UIManager:close(self.new_game_dialog)
-                    start(Board.BLACK, false)
-                end,
-            } },
-            { {
-                text = _("Two players (no engine)"),
-                callback = function()
-                    UIManager:close(self.new_game_dialog)
-                    start(Board.WHITE, true)
-                end,
-            } },
-        },
-    }
-    UIManager:show(self.new_game_dialog)
-    return true
+    return self:showMenu(_("New game"), {
+        { text = _("Play as White"),
+          callback = function() start(Board.WHITE, false) end },
+        { text = _("Play as Black"),
+          callback = function() start(Board.BLACK, false) end },
+        { text = _("Two players (no engine)"),
+          callback = function() start(Board.WHITE, true) end },
+    })
 end
 
 function ChessWidget:onUndo()
@@ -813,15 +910,13 @@ end
 
 --- Choose how often the board cleans itself up.
 function ChessWidget:onChooseRefreshInterval()
-    local buttons = {}
+    local entries = {}
     for _idx, choice in ipairs(REFRESH_CHOICES) do
         local every, label = choice[1], choice[2]
         local marker = (every == self.full_refresh_every) and "  ✓" or ""
-        buttons[#buttons + 1] = { {
+        entries[#entries + 1] = {
             text = label .. marker,
             callback = function()
-                UIManager:close(self.refresh_dialog)
-                self.refresh_dialog = nil
                 self.full_refresh_every = every
                 self.moves_since_full_refresh = 0
                 if self.settings then
@@ -830,41 +925,84 @@ function ChessWidget:onChooseRefreshInterval()
                 end
                 self:onForceRefresh()
             end,
-        } }
+        }
     end
-    self.refresh_dialog = ButtonDialog:new{
-        title = _("Clear the screen automatically"),
-        title_align = "center",
-        buttons = buttons,
-    }
-    UIManager:show(self.refresh_dialog)
+    return self:showMenu(_("Clear the screen automatically"), entries)
+end
+
+--- Switch to another set of piece images.
+function ChessWidget:onChoosePieceSet()
+    local entries = {}
+    for _, name in ipairs(self.piece_sets) do
+        local marker = (name == self.piece_set) and "  ✓" or ""
+        entries[#entries + 1] = {
+            text = prettySetName(name) .. marker,
+            callback = function()
+                if name == self.piece_set then return end
+                self.piece_set = name
+                self.board_view:setPieceDir(self:pieceDir())
+                if self.settings then
+                    self.settings:saveSetting("piece_set", name)
+                    self.settings:flush()
+                end
+                -- Every piece on the board has just changed shape, which is
+                -- exactly the kind of large swing that leaves the old set
+                -- ghosting behind it: flash it clean.
+                self:refreshAll("full")
+            end,
+        }
+    end
+    return self:showMenu(_("Piece set"), entries)
+end
+
+--- Show or hide the file letters and rank numbers.
+function ChessWidget:onToggleCoordinates()
+    self.show_coordinates = not self.show_coordinates
+    self.board_view:setShowCoordinates(self.show_coordinates)
+    if self.settings then
+        self.settings:saveSetting("show_coordinates", self.show_coordinates)
+        self.settings:flush()
+    end
+    self:refreshAll("partial")
+    return true
+end
+
+--- Put the position on the clipboard, for pasting into an analysis board.
+function ChessWidget:onCopyFen()
+    local fen = self.game.board:getFen()
+    if Device:hasClipboard() then
+        Device.input.setClipboardText(fen)
+        UIManager:show(InfoMessage:new{
+            text = ("%s\n\n%s"):format(_("Position copied:"), fen),
+        })
+    else
+        -- No clipboard to copy to, so show it: on a device with a keyboard
+        -- attached, or none at all, reading it off the screen is the fallback.
+        UIManager:show(InfoMessage:new{ text = fen })
+    end
     return true
 end
 
 function ChessWidget:onChooseLevel()
     if self.thinking then return true end
-    local buttons = {}
+    local entries = {}
     for i, level in ipairs(Search.LEVELS) do
         local marker = (i == self.game.level) and "  ✓" or ""
-        buttons[#buttons + 1] = { {
+        entries[#entries + 1] = {
             -- %g so the sub-second levels read "0.5s" rather than "0s".
             text = ("%s (%gs)%s"):format(level.name, level.time, marker),
             callback = function()
-                UIManager:close(self.level_dialog)
                 self.game.level = i
                 self:updateStatus()
                 self:refreshStatus()
-                self:saveSettings()
+                -- The whole game, not just the preference: the level is part
+                -- of the saved game, so saving only the preference would let
+                -- the restored game put the old level back.
+                self:saveGame()
             end,
-        } }
+        }
     end
-    self.level_dialog = ButtonDialog:new{
-        title = _("Engine strength"),
-        title_align = "center",
-        buttons = buttons,
-    }
-    UIManager:show(self.level_dialog)
-    return true
+    return self:showMenu(_("Engine strength"), entries)
 end
 
 function ChessWidget:onHint()
@@ -996,12 +1134,6 @@ function ChessWidget:saveGame()
     self.settings:saveSetting("game", self.game:toTable())
     self.settings:saveSetting("level", self.game.level)
     self.settings:saveSetting("flipped", self.board_view.flipped)
-    self.settings:flush()
-end
-
-function ChessWidget:saveSettings()
-    if not self.settings then return end
-    self.settings:saveSetting("level", self.game.level)
     self.settings:flush()
 end
 
