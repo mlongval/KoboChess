@@ -114,17 +114,27 @@ make -C "$WORK/arm/src" -j"$(nproc)" build \
 "$TC/bin/arm-linux-strip" "$WORK/arm/src/stockfish"
 
 # --- install ---------------------------------------------------------------
-# The network is whatever the source tree says it wants; the Makefile will
-# have downloaded it during the build.
-NET=$(grep -o 'nn-[0-9a-f]*\.nnue' "$WORK/arm/src/evaluate.h" | head -1)
-if [[ ! -f "$WORK/arm/src/$NET" ]]; then
-    echo "error: $NET was not downloaded; run make net in $WORK/arm/src" >&2
+# The networks are whatever the source tree says it wants; the Makefile will
+# have downloaded them during the build. Stockfish wants *both* the big net
+# and the small one, and with -DNNUE_EMBEDDING_OFF neither is compiled in, so
+# both files have to travel to the device or the engine dies on startup.
+NETS=$(grep -o 'nn-[0-9a-f]*\.nnue' "$WORK/arm/src/evaluate.h" | sort -u)
+if [[ -z "$NETS" ]]; then
+    echo "error: no network names found in evaluate.h" >&2
     exit 1
 fi
+for net in $NETS; do
+    if [[ ! -f "$WORK/arm/src/$net" ]]; then
+        echo "error: $net was not downloaded; run make net in $WORK/arm/src" >&2
+        exit 1
+    fi
+done
 
 mkdir -p "$DEST"
 cp "$WORK/arm/src/stockfish" "$DEST/engine"
-cp "$WORK/arm/src/$NET" "$DEST/$NET"
+for net in $NETS; do
+    cp "$WORK/arm/src/$net" "$DEST/$net"
+done
 chmod +x "$DEST/engine"
 
 echo

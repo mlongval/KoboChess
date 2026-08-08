@@ -42,15 +42,21 @@ local function isExecutable(path)
 end
 
 --- Look inside one engine folder. Returns the executable and its network.
+-- Stockfish 18 ships two networks, a big one and a small one, and looks the
+-- second up itself beside the binary. The one we name is the big one, so pick
+-- by size rather than by whatever order the directory happens to list them in.
 local function inspect(dir)
-    local exe, net
+    local exe, net, net_size
     local ok, iter, dir_obj = pcall(lfs.dir, dir)
     if not ok then return nil end
     for entry in iter, dir_obj do
         if entry ~= "." and entry ~= ".." then
             local path = dir .. "/" .. entry
             if entry:match("%.nnue$") then
-                net = net or path
+                local size = lfs.attributes(path, "size") or 0
+                if not net or size > net_size then
+                    net, net_size = path, size
+                end
             elseif not exe and isExecutable(path) then
                 exe = path
             end
