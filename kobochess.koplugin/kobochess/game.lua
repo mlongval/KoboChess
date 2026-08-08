@@ -170,6 +170,9 @@ function Game:resultText()
     elseif self.result == "resigned" then
         local who = (self.result_winner == Board.WHITE) and "White" or "Black"
         return ("%s wins by resignation"):format(who)
+    elseif self.result == "time" then
+        local who = (self.result_winner == Board.WHITE) and "White" or "Black"
+        return ("%s wins on time"):format(who)
     end
     return self.result
 end
@@ -177,7 +180,8 @@ end
 --- The PGN result token for the current state.
 function Game:resultToken()
     if not self.result then return "*" end
-    if self.result == "checkmate" or self.result == "resigned" then
+    if self.result == "checkmate" or self.result == "resigned"
+       or self.result == "time" then
         return (self.result_winner == Board.WHITE) and "1-0" or "0-1"
     end
     return "1/2-1/2"
@@ -189,6 +193,12 @@ end
 function Game:resign()
     self.result = "resigned"
     local loser = self.two_player and self.board.side or self.player_colour
+    self.result_winner = 1 - loser
+end
+
+--- End the game because `loser` ran out of time.
+function Game:loseOnTime(loser)
+    self.result = "time"
     self.result_winner = 1 - loser
 end
 
@@ -241,8 +251,9 @@ function Game.fromTable(data)
         end
         self:play(move)
     end
-    -- A resignation is not derivable from the position, so restore it.
-    if data.result == "resigned" then
+    -- Neither a resignation nor a flag fall is derivable from the position,
+    -- so those have to be restored rather than recomputed.
+    if data.result == "resigned" or data.result == "time" then
         self.result, self.result_winner = data.result, data.result_winner
     end
     return self

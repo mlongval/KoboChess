@@ -46,8 +46,10 @@ local _ = require("gettext")
 
 local Board = require("kobochess.board")
 local BoardView = require("boardview")
+local Clock = require("kobochess.clock")
 local Game = require("kobochess.game")
 local Search = require("kobochess.search")
+local Widget = require("ui/widget/widget")
 
 local Screen = Device.screen
 
@@ -86,6 +88,81 @@ local ChessWidget = InputContainer:extend{
 
 local function nowSeconds()
     return time.to_s(time.now())
+end
+
+--- One player's clock, drawn the right way up for the player it belongs to.
+--
+-- With the device flat on the table the far player reads everything upside
+-- down, so their clock is turned over exactly as their pieces are. The
+-- rotated bitmap is cached and rebuilt only when the text changes, which
+-- matters when the thing repaints once a second.
+local ClockLine = Widget:extend{
+    text = "",
+    face = nil,
+    width = nil,
+    height = nil,
+    rotated = false,
+}
+
+function ClockLine:init()
+    self.dimen = Geom:new{ x = 0, y = 0, w = self.width, h = self.height }
+    self.text_widget = TextWidget:new{ text = self.text, face = self.face, bold = true }
+end
+
+--- Returns true if the text actually changed, so the caller can skip a
+-- repaint when the displayed second has not moved on.
+function ClockLine:setText(text)
+    if text == self.text then return false end
+    self.text = text
+    self.text_widget:setText(text)
+    self:freeCache()
+    return true
+end
+
+function ClockLine:freeCache()
+    if self.cached_bb then
+        self.cached_bb:free()
+        self.cached_bb = nil
+    end
+end
+
+function ClockLine:paintTo(bb, x, y)
+    self.dimen.x, self.dimen.y = x, y
+    local size = self.text_widget:getSize()
+    local ox = math.floor((self.width - size.w) / 2)
+    local oy = math.floor((self.height - size.h) / 2)
+
+    if not self.rotated then
+        self.text_widget:paintTo(bb, x + ox, y + oy)
+        return
+    end
+
+    if not self.cached_bb then
+        local tmp = Blitbuffer.new(self.width, self.height, bb:getType())
+        tmp:fill(Blitbuffer.COLOR_WHITE)
+        self.text_widget:paintTo(tmp, ox, oy)
+        self.cached_bb = tmp:rotatedCopy(180)
+        tmp:free()
+    end
+    bb:blitFrom(self.cached_bb, x, y, 0, 0, self.width, self.height)
+end
+
+function ClockLine:getSize()
+    return Geom:new{ w = self.width, h = self.height }
+end
+
+function ClockLine:free()
+    self:freeCache()
+    if self.text_widget then self.text_widget:free() end
+end
+
+--- Is a point inside a painted widget's rectangle?
+-- Geom describes the rectangle; this is just the test, kept here because the
+-- clock lines are the only things outside the board that need to be tapped.
+local function contains(dimen, pos)
+    if not dimen or not pos or not dimen.y then return false end
+    return pos.x >= dimen.x and pos.x < dimen.x + dimen.w
+       and pos.y >= dimen.y and pos.y < dimen.y + dimen.h
 end
 
 --- The piece sets installed under `pieces/`.
@@ -159,12 +236,22 @@ function ChessWidget:init()
 
     self.full_refresh_every = DEFAULT_FULL_REFRESH_EVERY
     self.show_coordinates = true
+    self.time_control = 1              -- 1 is "Off"
     if self.settings then
         local saved = self.settings:readSetting("full_refresh_every")
         if type(saved) == "number" then self.full_refresh_every = saved end
         local coords = self.settings:readSetting("show_coordinates")
         if coords ~= nil then self.show_coordinates = coords end
+        local control = self.settings:readSetting("time_control")
+        if type(control) == "number" and Clock.CONTROLS[control] then
+            self.time_control = control
+        end
     end
+
+    -- One closure, created once: UIManager:unschedule matches on identity, so
+    -- a fresh closure per tick could never be cancelled.
+    self.clock_tick = function() self:onClockTick() end
+    self.clock = self:restoreClock()
 
     self.pieces_root = self.plugin_path .. "/pieces"
     self.piece_sets = findPieceSets(self.pieces_root)
@@ -206,6 +293,143 @@ end
 
 function ChessWidget:pieceDir()
     return self.pieces_root .. "/" .. self.piece_set
+end
+
+--==========================================================================
+-- The clock
+--==========================================================================
+
+--- A clock only makes sense with two humans. Against the engine the player
+-- would be racing something whose thinking time is already fixed by the
+-- level, which is a different game and not the one that was asked for.
+function ChessWidget:clockEnabled()
+    return self.game.two_player and self.time_control > 1
+end
+
+function ChessWidget:newClock()
+    local control = Clock.CONTROLS[self.time_control]
+    return Clock.new{
+        base = control.base,
+        increment = control.increment,
+        side = self.game.board.side,
+    }
+end
+
+--- The clock belonging to the saved game, or a fresh one.
+function ChessWidget:restoreClock()
+    if not self:clockEnabled() then return nil end
+    local saved = self.settings and self.settings:readSetting("clock")
+    -- Tied to the game it was timing: a clock left over from a previous game
+    -- would otherwise hand somebody a half-used allowance.
+    if type(saved) == "table" and saved.game_started_at == self.game.started_at then
+        local clock = Clock.fromTable(saved)
+        if clock then return clock end
+    end
+    return self:newClock()
+end
+
+function ChessWidget:scheduleClockTick()
+    if not (self.clock and self.clock:isRunning()) then return end
+    UIManager:unschedule(self.clock_tick)
+    UIManager:scheduleIn(1, self.clock_tick)
+end
+
+function ChessWidget:stopClockTick()
+    UIManager:unschedule(self.clock_tick)
+end
+
+--- Once a second while the clock runs. Only the side that is counting down
+-- can have changed, and the text is compared before anything is repainted,
+-- so an idle second costs nothing on the panel.
+function ChessWidget:onClockTick()
+    if not (self.clock and self.clock:isRunning()) then return end
+    local now = nowSeconds()
+    self.clock:sync(now)
+
+    local flagged = self.clock:flaggedSide()
+    if flagged then
+        self:onFlagFall(flagged)
+        return
+    end
+
+    if self:updateClockText() then self:refreshClocks() end
+    self:scheduleClockTick()
+end
+
+function ChessWidget:clockText(colour, now)
+    local name = (colour == Board.WHITE) and _("White") or _("Black")
+    local marker = ""
+    if self.clock:flaggedSide() == colour then
+        marker = "  ✕"
+    elseif self.clock.side == colour then
+        marker = self.clock:isRunning() and "  ▶" or "  ‖"
+    end
+    return ("%s   %s%s"):format(name, Clock.format(self.clock:timeLeft(colour, now)),
+                                marker)
+end
+
+--- Returns true if either line's text changed.
+function ChessWidget:updateClockText()
+    if not (self.clock and self.clock_far and self.clock_near) then return false end
+    local now = nowSeconds()
+    local far = self.board_view:farColour()
+    -- Two calls, not one `or`: setText must run on both lines, and `or` would
+    -- skip the second as soon as the first returned true.
+    local far_changed = self.clock_far:setText(self:clockText(far, now))
+    local near_changed = self.clock_near:setText(self:clockText(1 - far, now))
+    return far_changed or near_changed
+end
+
+function ChessWidget:refreshClocks()
+    for _, line in ipairs({ self.clock_far, self.clock_near }) do
+        if line and line.dimen and line.dimen.y then
+            -- "ui", never "partial": this fires every second, and a mode that
+            -- counts towards the automatic flashing refresh would have the
+            -- screen blinking its way through the game.
+            self:refreshRegion(line.dimen:copy(), "ui")
+        end
+    end
+end
+
+--- Start or stop the clock by hand, for an interruption.
+function ChessWidget:onToggleClock()
+    if not self.clock or self.clock:flaggedSide() or self.game:isOver() then
+        return true
+    end
+    local now = nowSeconds()
+    if self.clock:isRunning() then
+        self.clock:pause(now)
+        self:stopClockTick()
+    else
+        self.clock:start(now)
+        self:scheduleClockTick()
+    end
+    self:updateClockText()
+    self:refreshClocks()
+    self:saveGame()
+    return true
+end
+
+--- Hand the clock over after a move, starting it if this was the first one.
+function ChessWidget:clockAfterMove(mover)
+    if not self.clock or self.clock:flaggedSide() then return end
+    local now = nowSeconds()
+    -- The clock is not running before the first move: whoever opens has been
+    -- setting up, not thinking on their time.
+    if not self.clock:isRunning() then self.clock:start(now) end
+    self.clock:moved(mover, now)
+    self:updateClockText()
+    self:scheduleClockTick()
+end
+
+function ChessWidget:onFlagFall(loser)
+    self:stopClockTick()
+    self.game:loseOnTime(loser)
+    self:updateClockText()
+    self:updateStatus()
+    self:refreshAll("partial")
+    self:announceResult()
+    self:saveGame()
 end
 
 --- Build the widget tree. The board is sized from whatever vertical space is
@@ -256,6 +480,24 @@ function ChessWidget:buildLayout()
         { id = "options", text = _("Options ▾"), callback = function() self:onOptionsMenu() end },
     }, margin)
 
+    -- The clocks, one at each end of the board, present only when there is a
+    -- clock to show: a game with no time control should not pay for it in
+    -- board size.
+    local clock_h = 0
+    if self.clock then
+        local face = Font:getFace("cfont", 30)
+        clock_h = TextWidget:new{ text = "0:00", face = face, bold = true }
+            :getSize().h + Size.padding.default
+        self.clock_far = ClockLine:new{
+            face = face, width = self.screen_w, height = clock_h,
+            -- Upside down, like the far player's pieces.
+            rotated = true,
+        }
+        self.clock_near = ClockLine:new{
+            face = face, width = self.screen_w, height = clock_h,
+        }
+    end
+
     -- Measure the chrome so the board can claim the rest.
     local span = Size.padding.default
     local fixed_h = self.title_bar:getHeight()
@@ -263,6 +505,7 @@ function ChessWidget:buildLayout()
         + self.history_widget:getSize().h
         + row:getSize().h
         + span * 5
+        + (self.clock and (clock_h * 2 + span * 2) or 0)
 
     local avail_h = self.screen_h - fixed_h
     local board_size = math.min(self.screen_w - 2 * margin, avail_h)
@@ -304,15 +547,23 @@ function ChessWidget:buildLayout()
         VerticalSpan:new{ width = span },
         self.status_container,
         VerticalSpan:new{ width = span },
-        CenterContainer:new{
-            dimen = Geom:new{ w = self.screen_w, h = board_size },
-            self.board_view,
-        },
-        VerticalSpan:new{ width = span },
-        self.history_container,
-        VerticalSpan:new{ width = span },
-        row,
     }
+    if self.clock then
+        table.insert(content, self.clock_far)
+        table.insert(content, VerticalSpan:new{ width = span })
+    end
+    table.insert(content, CenterContainer:new{
+        dimen = Geom:new{ w = self.screen_w, h = board_size },
+        self.board_view,
+    })
+    table.insert(content, VerticalSpan:new{ width = span })
+    if self.clock then
+        table.insert(content, self.clock_near)
+        table.insert(content, VerticalSpan:new{ width = span })
+    end
+    table.insert(content, self.history_container)
+    table.insert(content, VerticalSpan:new{ width = span })
+    table.insert(content, row)
 
     self[1] = FrameContainer:new{
         width = self.screen_w,
@@ -324,6 +575,31 @@ function ChessWidget:buildLayout()
         content,
     }
     self.dimen = Geom:new{ x = 0, y = 0, w = self.screen_w, h = self.screen_h }
+end
+
+--- Throw the widget tree away and build it again.
+--
+-- Needed when the layout changes shape rather than just its contents: turning
+-- the clock on adds two rows and takes the height out of the board, and a new
+-- game can change which side is at the top. Rebuilding is cheap enough at
+-- these moments -- all of them already warrant a full refresh.
+function ChessWidget:rebuildLayout()
+    self:stopClockTick()
+    if self.board_view then self.board_view:onCloseWidget() end
+    if self.status_widget then self.status_widget:free() end
+    if self.history_widget then self.history_widget:free() end
+    if self.clock_far then self.clock_far:free() end
+    if self.clock_near then self.clock_near:free() end
+    self.clock_far, self.clock_near = nil, nil
+
+    self:buildLayout()
+    self:syncBoardToGame()
+    self:updateStatus()
+    if self.clock then
+        self:updateClockText()
+        self:scheduleClockTick()
+    end
+    self:refreshAll("full")
 end
 
 function ChessWidget:buildButtonRow(specs, margin)
@@ -424,7 +700,12 @@ function ChessWidget:updateStatus(text)
     -- Enable only what makes sense right now. The two menus stay live: what
     -- they hold that would be wrong mid-search is greyed out inside them,
     -- which says why, where disabling the whole menu would not.
-    self.buttons.undo:enableDisable(not self.thinking and self.game:canUndo())
+    -- Undo stays out once somebody has flagged: the clock cannot give the
+    -- time back, so taking the move back would just hand a lost game to a
+    -- side with nothing left to think with.
+    local flagged = self.clock and self.clock:flaggedSide()
+    self.buttons.undo:enableDisable(not self.thinking and self.game:canUndo()
+                                    and not flagged)
     self.buttons.hint:enableDisable(not self.thinking and self.game:isPlayerTurn())
 end
 
@@ -467,6 +748,14 @@ end
 --==========================================================================
 
 function ChessWidget:onTap(_, ges)
+    -- Either clock is a pause button, reachable from whichever side of the
+    -- table you are sitting on.
+    if self.clock and ges.pos
+       and (contains(self.clock_far and self.clock_far.dimen, ges.pos)
+            or contains(self.clock_near and self.clock_near.dimen, ges.pos)) then
+        return self:onToggleClock()
+    end
+
     -- Buttons and the title bar are children, so they have already had their
     -- chance at this event; anything arriving here is aimed at the board.
     local board_dimen = self.board_view.dimen
@@ -578,10 +867,13 @@ function ChessWidget:commitPlayerMove(move)
         changed[#changed + 1] = sq
     end
 
+    local mover = self.game.board.side
     if not self.game:play(move) then
         logger.warn("KoboChess: refused to play an illegal move")
         return
     end
+    -- Making the move presses the clock; there is no button to forget.
+    self:clockAfterMove(mover)
 
     -- Castling and en passant move a second piece, so repaint the whole rank
     -- rather than trying to enumerate the extra squares.
@@ -602,6 +894,13 @@ end
 
 --- Common bookkeeping after any move by either side.
 function ChessWidget:afterMove(changed_squares)
+    -- A finished game stops the clock: mate is mate, whatever the flag does
+    -- a moment later.
+    if self.clock and self.game:isOver() then
+        self.clock:pause(nowSeconds())
+        self:stopClockTick()
+        self:updateClockText()
+    end
     self:updateStatus()
     self.moves_since_full_refresh = self.moves_since_full_refresh + 1
 
@@ -810,9 +1109,16 @@ end
 
 --- Everything to do with the game being played.
 function ChessWidget:onGameMenu()
+    local clock_text = self.clock and self.clock:isRunning()
+        and _("Pause clock") or _("Start clock")
     return self:showMenu(_("Game"), {
         { text = _("New game"), enabled = not self.thinking,
           callback = function() self:onNewGame() end },
+        { text = clock_text,
+          -- Tapping either clock does this too; it is here to be findable.
+          enabled = self.clock ~= nil and not self.clock:flaggedSide()
+                    and not self.game:isOver(),
+          callback = function() self:onToggleClock() end },
         { text = _("Resign"), enabled = not self.game:isOver(),
           callback = function() self:onResign() end },
         { text = _("Export PGN"),
@@ -832,6 +1138,9 @@ function ChessWidget:onOptionsMenu()
         { text = ("%s: %s"):format(_("Level"), level and level.name or "?"),
           enabled = not self.thinking,
           callback = function() self:onChooseLevel() end },
+        { text = ("%s: %s"):format(_("Clock"),
+                                   Clock.CONTROLS[self.time_control].name),
+          callback = function() self:onChooseTimeControl() end },
         { text = _("Screen refresh"),
           callback = function() self:onChooseRefreshInterval() end },
         { text = self.show_coordinates and _("Hide coordinates")
@@ -850,17 +1159,20 @@ function ChessWidget:onNewGame()
         }
         self.searcher:reset()
         -- A two-player game is viewed from White's side by default; the
-        -- players can turn it round with Flip.
-        self.board_view.flipped = (not two_player) and (colour == Board.BLACK) or false
-        self.board_view.rotate_far_side = two_player
-        self.board_view:freeRotatedWidgets()
+        -- players can turn it round with Flip. Saved before the rebuild,
+        -- because that is where the layout reads it back from.
+        local flipped = (not two_player) and (colour == Board.BLACK) or false
+        if self.settings then
+            self.settings:saveSetting("flipped", flipped)
+            self.settings:flush()
+        end
+        self.clock = self:clockEnabled() and self:newClock() or nil
         self.moves_since_full_refresh = 0
         self.hint_move = nil
-        self:syncBoardToGame()
-        self:updateStatus()
-        -- A new game is worth a clean, flashing refresh: it clears any
-        -- ghosting left by the previous one.
-        self:refreshAll("flashui")
+        -- Rebuilt rather than adjusted in place: the clock may have just
+        -- appeared or gone, which changes how much height the board gets.
+        -- It ends in a full refresh, which a new game wants anyway.
+        self:rebuildLayout()
         self:saveGame()
         if self.game:isEngineTurn() then
             self:startEngineTurn()
@@ -881,6 +1193,12 @@ function ChessWidget:onUndo()
     if self.thinking then return true end
     if not self.game:undoMove() then return true end
     self.hint_move = nil
+    -- The clock follows the side to move but gives nothing back: time spent
+    -- is spent, and an undo that refunded it would be a way to play for free.
+    if self.clock then
+        self.clock:setSide(self.game.board.side, nowSeconds())
+        self:updateClockText()
+    end
     self:syncBoardToGame()
     self:updateStatus()
     self:refreshAll("partial")
@@ -953,6 +1271,47 @@ function ChessWidget:onChoosePieceSet()
         }
     end
     return self:showMenu(_("Piece set"), entries)
+end
+
+--- Choose the time control, which also resets the clock.
+function ChessWidget:onChooseTimeControl()
+    local entries = {}
+    for i, control in ipairs(Clock.CONTROLS) do
+        local marker = (i == self.time_control) and "  ✓" or ""
+        local label = control.name
+        if control.increment > 0 then
+            label = ("%s  (%d min + %ds)"):format(control.name,
+                                                  control.base / 60,
+                                                  control.increment)
+        elseif control.base > 0 then
+            label = ("%s  (%d min)"):format(control.name, control.base / 60)
+        end
+        entries[#entries + 1] = {
+            text = label .. marker,
+            callback = function()
+                if i == self.time_control then return end
+                self.time_control = i
+                if self.settings then
+                    self.settings:saveSetting("time_control", i)
+                    self.settings:flush()
+                end
+                -- Changing the control starts the allowance over: carrying
+                -- times across from a different one would be meaningless.
+                self.clock = self:clockEnabled() and self:newClock() or nil
+                self:saveGame()
+                -- The clock coming or going changes the layout's shape.
+                self:rebuildLayout()
+            end,
+        }
+    end
+
+    local title = _("Clock")
+    if not self.game.two_player then
+        -- Setting it is still allowed -- it takes effect for the next
+        -- two-player game -- but say why nothing happened.
+        title = _("Clock (two-player games only)")
+    end
+    return self:showMenu(title, entries)
 end
 
 --- Show or hide the file letters and rank numbers.
@@ -1134,6 +1493,15 @@ function ChessWidget:saveGame()
     self.settings:saveSetting("game", self.game:toTable())
     self.settings:saveSetting("level", self.game.level)
     self.settings:saveSetting("flipped", self.board_view.flipped)
+    if self.clock then
+        local saved = self.clock:toTable(nowSeconds())
+        -- Stamped with the game it belongs to, so it is never applied to a
+        -- different one.
+        saved.game_started_at = self.game.started_at
+        self.settings:saveSetting("clock", saved)
+    else
+        self.settings:saveSetting("clock", nil)
+    end
     self.settings:flush()
 end
 
@@ -1144,6 +1512,7 @@ end
 function ChessWidget:onShow()
     -- Night mode may have been toggled since the board was built.
     self.board_view:syncNightMode()
+    if self.clock then self:updateClockText() end
     -- One clean full refresh on entry; the board is a large, high-contrast
     -- image and partial refreshes leave the previous screen showing through.
     UIManager:setDirty(self, "full")
@@ -1153,6 +1522,10 @@ end
 function ChessWidget:onClose()
     self:cancelSearch()
     self.search_co = nil
+    -- Closing the board stops the clock. Nobody is thinking about the
+    -- position while the reader is showing a book.
+    if self.clock then self.clock:pause(nowSeconds()) end
+    self:stopClockTick()
     self:saveGame()
     UIManager:close(self)
     if self.on_close then self.on_close() end
@@ -1162,9 +1535,12 @@ end
 function ChessWidget:onCloseWidget()
     self.search_co = nil
     self.thinking = false
+    self:stopClockTick()
     if self.board_view then self.board_view:onCloseWidget() end
     if self.status_widget then self.status_widget:free() end
     if self.history_widget then self.history_widget:free() end
+    if self.clock_far then self.clock_far:free() end
+    if self.clock_near then self.clock_near:free() end
     -- The board filled the screen, so leave a clean panel behind.
     UIManager:setDirty(nil, "full")
 end
@@ -1172,6 +1548,12 @@ end
 --- Pause a running search when KOReader suspends, so the device can sleep.
 function ChessWidget:onSuspend()
     self:cancelSearch()
+    -- And stop the clock, rather than charge somebody for the time the
+    -- device spent asleep. It has to be restarted by hand on the way back,
+    -- which is the honest thing to do: only the players know when they are
+    -- ready to carry on.
+    if self.clock then self.clock:pause(nowSeconds()) end
+    self:stopClockTick()
     self:saveGame()
 end
 

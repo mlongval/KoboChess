@@ -41,6 +41,10 @@ toolchain to build and nothing to cross-compile for the device.
   The device is meant to lie flat between the players, so the pieces of
   whichever side is drawn at the top are turned 180° and read the right way
   up from the far side of the table. **Flip** swaps which side that is.
+- **A clock**, for two-player games — 3|2 through 30|0, with increment.
+  Making a move presses it; there is no button to forget. Each player's
+  clock sits at their end of the board, the far one turned over like their
+  pieces, and tapping either clock pauses and resumes.
 - Tap a piece to pick it up; legal destinations appear as dots, captures as
   rings. Tap again to move.
 - One row of buttons — **Game · Undo · Hint · Flip · Refresh · Options** —
@@ -48,8 +52,8 @@ toolchain to build and nothing to cross-compile for the device.
 
   | | |
   |---|---|
-  | **Game ▾** | New game · Resign · Export PGN · Copy FEN |
-  | **Options ▾** | Piece set · Level · Screen refresh · Coordinates on/off |
+  | **Game ▾** | New game · Start/pause clock · Resign · Export PGN · Copy FEN |
+  | **Options ▾** | Piece set · Level · Clock · Screen refresh · Coordinates on/off |
 
 - **Refresh** clears e-ink ghosting on demand; hold it to set how often the
   board does that by itself (every move … every 12, or never).
@@ -159,6 +163,7 @@ kobochess.koplugin/       what gets copied to the device
     eval.lua              evaluation
     search.lua            alpha-beta search
     game.lua              move history, results, save format, PGN
+    clock.lua             the two countdowns
   pieces/<set>/           twelve piece images per set; pick one under Options
 tools/gen_pieces.py       draws a piece set from scratch
 tools/import_pieces.py    builds a piece set from a sprite sheet
@@ -177,7 +182,12 @@ rules are implemented correctly:
 ```sh
 luajit test/perft.lua 2      # arg = seconds allowed per position
 luajit test/search_test.lua
+luajit test/clock_test.lua
 ```
+
+The clock takes "now" as an argument rather than reading it, the same way the
+search does, so `clock_test.lua` makes three minutes pass in a microsecond and
+checks the increment, the flag and the save format exactly.
 
 `perft.lua` also checks that make/unmake restores the position exactly and
 that the incrementally updated Zobrist hash matches a full recomputation.
@@ -213,6 +223,11 @@ touching it as little as possible:
   freezing for the length of the search.
 - While thinking, the status line updates at most every 1.5 s, because each
   update costs a repaint.
+- The clock repaints once a second while it runs, but only the line whose
+  number actually changed, and always as `"ui"` — a mode that counted towards
+  the automatic flashing refresh would have the screen blinking its way
+  through the game. It stops on its own when the board is closed, when the
+  device suspends, and when the game ends.
 - **Night mode** needs special handling. KOReader inverts the whole screen on
   its way to the panel, and `ImageWidget` compensates by inverting each
   image's entire bounding rectangle — transparent margins included, which
