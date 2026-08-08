@@ -79,6 +79,8 @@ if [[ -d "$TARGET" ]]; then
     cp -r "$PLUGIN_DIR" "$DEST/"
     # Kobos are FAT32; strip anything that cannot survive the trip.
     find "$DEST/$PLUGIN_DIR" -name '._*' -delete 2>/dev/null || true
+    # And an engine has to stay runnable.
+    [[ -d "$DEST/$PLUGIN_DIR/engines" ]] && chmod -R +x "$DEST/$PLUGIN_DIR/engines"/*/ 2>/dev/null || true
 
     if [[ $WITH_NM -eq 1 ]]; then
         if [[ ! -d "$TARGET/.adds/nm" ]]; then
@@ -120,6 +122,11 @@ if command -v rsync >/dev/null 2>&1 && $SSH "$TARGET" 'command -v rsync' >/dev/n
 else
     $SCP -q -r "$PLUGIN_DIR" "$TARGET:$DEST/"
 fi
+
+# An engine is only an engine if it can be run, and the copy may not have
+# carried the bit: the Kobo's user partition is FAT32, which has no permission
+# bits of its own.
+$SSH "$TARGET" "[ -d '$DEST/$PLUGIN_DIR/engines' ] && chmod -R +x '$DEST/$PLUGIN_DIR/engines'/*/ 2>/dev/null || true"
 
 if [[ $WITH_NM -eq 1 ]]; then
     if $SSH "$TARGET" '[ -d /mnt/onboard/.adds/nm ]'; then

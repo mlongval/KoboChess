@@ -26,3 +26,8 @@ __pycache__/
 /pieces_preview-*.png
 !/pieces_preview-drawn.png
 !/pieces_preview-vecteezy.png
+
+# External UCI engines. Stockfish is GPLv3 and a hundred megabytes of neural
+# network; it is built by tools/build_stockfish.sh and installed to the
+# device, but it does not belong in this repository.
+/kobochess.koplugin/engines/

@@ -36,6 +36,9 @@ toolchain to build and nothing to cross-compile for the device.
 ## What it does
 
 - Play as White or Black against the engine, six strength levels.
+- **Two engines.** The built-in one is pure Lua and always present.
+  **Stockfish** can be installed alongside it and picked under
+  **Options → Engine**; see [Engines](#engines).
 - **Two-player mode** — pick "Two players (no engine)" under New game and the
   engine stays out of it entirely. Undo then takes back a single ply rather
   than a move and its reply, and resigning applies to whoever is to move.
@@ -54,7 +57,7 @@ toolchain to build and nothing to cross-compile for the device.
   | | |
   |---|---|
   | **Game ▾** | New game · Start/pause clock · Resign · Export PGN · Copy FEN |
-  | **Options ▾** | Piece set · Level · Clock · Screen refresh · Coordinates on/off |
+  | **Options ▾** | Piece set · Engine · Level · Clock · Screen refresh · Coordinates on/off |
 
 - **Refresh** clears e-ink ghosting on demand; hold it to set how often the
   board does that by itself (every move … every 12, or never).
@@ -123,10 +126,71 @@ Search is alpha-beta with iterative deepening, a transposition table,
 quiescence search, null-move pruning, late move reductions, killer/history
 move ordering, and a tapered material + piece-square evaluation.
 
-## Three traps worth knowing about
+## Engines
+
+The built-in engine is the pure-Lua one described above: no binary, nothing
+to install, and it is what the plugin uses unless told otherwise.
+
+Any UCI engine can be added beside it. Each lives in its own folder under
+`kobochess.koplugin/engines/`, and whatever is found there appears in
+**Options → Engine**:
+
+```
+engines/
+  stockfish/
+    engine            the executable -- the executable bit is what
+                      identifies it, so the name does not matter
+    nn-….nnue         its network, if it needs one
+```
+
+Nothing under `engines/` is tracked by git. Stockfish is GPLv3 and its
+network alone is over a hundred megabytes, so it is built rather than
+committed:
+
+```sh
+tools/build_stockfish.sh          # cross-compile for the device
+tools/build_stockfish.sh --native # or for this machine, to test in the emulator
+./install.sh kobo                 # engines/ travels with the plugin
+```
+
+The script needs no root: it fetches a self-contained ARM toolchain into
+`local/` on first use, cross-compiles Stockfish static against musl — a Kobo's
+own glibc is far too old to link against — and keeps the network as a separate
+file rather than the 110 MB binary that embedding it would produce.
+
+It also applies `tools/stockfish-armv7-neon.patch`, one line: Stockfish's
+32-bit ARM NEON path does not compile, because a helper standing in for an
+instruction that 32-bit ARM lacks is declared returning the wrong vector type.
+The build fails loudly if that patch stops applying and the problem has not
+been fixed upstream, rather than quietly producing something untested.
+
+**How the six levels map.** An external engine is far too strong to play
+straight, so the lower levels ask it to play badly on purpose, through
+`UCI_LimitStrength` and `UCI_Elo` — a rating target the engine implements
+itself, losing in more human-looking ways than simply searching less deeply.
+Only **Maximum** lets it off the leash. The level names are the same either
+way, so the menu reads the same whichever engine is selected.
+
+**If an engine will not start** — the wrong architecture, a missing network,
+a folder with nothing runnable in it — the plugin says so, switches back to
+the built-in engine, and plays the move it was in the middle of, so a bad
+install cannot leave a game stuck waiting for a move that is never coming.
+
+## Four traps worth knowing about
 
 Each of these produced a bug that looked like something else entirely, so they
 are written down rather than rediscovered.
+
+**`execvp` runs the shell on a binary it cannot execute.** Hand it an
+executable for the wrong architecture and it does not simply fail: on
+`ENOEXEC` it falls back to passing the file to `/bin/sh`, which reads the
+machine code as a shell script and reports a syntax error somewhere in the
+middle of it. The error names the file and a line number, so it reads like a
+corrupt script rather than an ARM binary on an x86 machine. `execv` does not
+do this — it fails, which is the truth. Related: KOReader's
+`terminateSubProcess` kills but does not reap, so an engine left that way
+lingers as a zombie until something calls `isSubProcessDone` on it, which
+cannot be done in one go because the process takes a moment to die.
 
 **A search that yields to the UI must run on a copy of the board.** The engine
 explores by making and unmaking moves on the board it is given, and the front
@@ -165,9 +229,14 @@ kobochess.koplugin/       what gets copied to the device
     search.lua            alpha-beta search
     game.lua              move history, results, save format, PGN
     clock.lua             the two countdowns
+    engines.lua           which engines are installed
+    engine_lua.lua        the built-in engine, behind the shared interface
+    engine_uci.lua        an external engine, over a pipe
+  engines/<name>/         an installed UCI engine (not tracked)
   pieces/<set>/           twelve piece images per set; pick one under Options
 tools/gen_pieces.py       draws a piece set from scratch
 tools/import_pieces.py    builds a piece set from a sprite sheet
+tools/build_stockfish.sh  cross-compiles Stockfish for the device
 test/perft.lua            move generation correctness
 test/search_test.lua      tactics, self-play, interruption, speed
 nickelmenu/               the home-screen menu entry

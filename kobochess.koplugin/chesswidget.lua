@@ -47,16 +47,12 @@ local _ = require("gettext")
 local Board = require("kobochess.board")
 local BoardView = require("boardview")
 local Clock = require("kobochess.clock")
+local Engines = require("kobochess.engines")
 local Game = require("kobochess.game")
 local Search = require("kobochess.search")
 local Widget = require("ui/widget/widget")
 
 local Screen = Device.screen
-
--- How long the engine may run before handing control back to the UI. Short
--- enough that a tap feels responsive, long enough that the yield overhead
--- stays negligible.
-local SEARCH_SLICE = 0.05
 
 -- Minimum gap between status-line updates while thinking. Each one costs a
 -- full repaint, so this is deliberately slow.
@@ -222,14 +218,9 @@ function ChessWidget:init()
     self.screen_h = Screen:getHeight()
     self.covers_fullscreen = true
 
-    self.searcher = Search.new()
-    -- Check for a yield often; the check itself is cheap and it is what
-    -- bounds how quickly Cancel takes effect.
-    self.searcher.tick_interval = 256
-
     self.thinking = false
     self.abort_search = false
-    self.search_co = nil
+    self.search_kind = nil
     self.moves_since_full_refresh = 0
     self.status_line = ""
     self.hint_move = nil
@@ -248,10 +239,16 @@ function ChessWidget:init()
         end
     end
 
-    -- One closure, created once: UIManager:unschedule matches on identity, so
-    -- a fresh closure per tick could never be cancelled.
+    -- One closure each, created once: UIManager:unschedule matches on
+    -- identity, so a fresh closure per tick could never be cancelled.
     self.clock_tick = function() self:onClockTick() end
+    self.engine_poll = function() self:onEnginePoll() end
     self.clock = self:restoreClock()
+
+    self.engines_root = self.plugin_path .. "/engines"
+    self.engine_list = Engines.list(self.engines_root)
+    self:selectEngine(self.settings and self.settings:readSetting("engine")
+                      or Engines.BUILTIN, true)
 
     self.pieces_root = self.plugin_path .. "/pieces"
     self.piece_sets = findPieceSets(self.pieces_root)
@@ -935,93 +932,135 @@ end
 -- Engine turn
 --==========================================================================
 
+--- Ask the current engine for a move.
+--
+-- Both engines are driven the same way: start a search, then poll from the UI
+-- loop until it answers. The built-in engine does its thinking inside poll(),
+-- resuming a coroutine for a slice at a time; an external engine does its
+-- thinking in another process and poll() only drains its pipe. Either way the
+-- screen and the buttons stay alive throughout.
 function ChessWidget:startEngineTurn()
     if self.thinking then return end
     self.thinking = true
     self.abort_search = false
+    self.search_kind = "move"
     self.search_started = nowSeconds()
     self.last_status_update = 0
     self:updateStatus()
     self:refreshStatus()
 
-    local last_yield = nowSeconds()
-    local widget = self
-
-    -- Search a copy. The search makes and unmakes moves on the board it is
-    -- given, and it yields to the UI every few milliseconds, so searching the
-    -- live board means any repaint landing mid-search draws the hypothetical
-    -- position the engine is currently standing in: pieces on strange squares,
-    -- captured pieces missing.
-    local search_board = self.game.board:clone()
-
-    self.search_co = coroutine.create(function()
-        return widget.searcher:think(search_board, {
-            level = widget.game.level,
-            now = nowSeconds,
-            on_tick = function()
-                if widget.abort_search then return false end
-                local now = nowSeconds()
-                if now - last_yield >= SEARCH_SLICE then
-                    coroutine.yield()
-                    last_yield = nowSeconds()
-                end
-                return true
-            end,
-            on_depth = function(depth, score, san)
-                widget:onSearchProgress(depth, score, san)
-            end,
-        })
-    end)
-
-    UIManager:nextTick(function() self:stepEngine() end)
-end
-
---- Resume the search for one slice, then hand control back to the UI loop.
-function ChessWidget:stepEngine()
-    local co = self.search_co
-    if not co then return end
-
-    local ok, move, info = coroutine.resume(co)
+    local ok, err = self.engine:think{
+        game = self.game,
+        level = self.game.level,
+        on_progress = function(depth, score, move_text)
+            self:onSearchProgress(depth, score, move_text)
+        end,
+        on_done = function(uci, info, failure)
+            self:finishEngineTurn(uci, info, failure)
+        end,
+    }
     if not ok then
-        -- `move` holds the error message when the coroutine failed.
-        logger.err("KoboChess: search failed:", move)
-        self.search_co = nil
         self.thinking = false
-        self:updateStatus(_("Engine error — your move"))
-        self:refreshStatus()
+        self:onEngineFailure(err)
         return
     end
+    self:schedulePoll()
+end
 
-    if coroutine.status(co) == "dead" then
-        self.search_co = nil
-        self.thinking = false
-        self:finishEngineTurn(move, info)
+function ChessWidget:schedulePoll()
+    local interval = self.engine.poll_interval
+    if interval and interval > 0 then
+        UIManager:scheduleIn(interval, self.engine_poll)
     else
-        UIManager:nextTick(function() self:stepEngine() end)
+        UIManager:nextTick(self.engine_poll)
     end
 end
 
-function ChessWidget:onSearchProgress(depth, score, san)
+function ChessWidget:stopPolling()
+    UIManager:unschedule(self.engine_poll)
+end
+
+function ChessWidget:onEnginePoll()
+    if not self.thinking then return end
+    local status = self.engine:poll()
+    -- "idle" and "error" both mean the engine has already called back, so
+    -- there is nothing left to wait for.
+    if status == "busy" then self:schedulePoll() end
+end
+
+--- Whatever went wrong, the game has to stay playable, so fall back to the
+--- engine that cannot fail to start.
+function ChessWidget:onEngineFailure(err)
+    logger.err("KoboChess: engine failed:", tostring(err))
+    self:stopPolling()
+    self.thinking = false
+
+    local name = self.engine:name()
+    local was_external = (self.engine_descriptor.kind ~= "lua")
+    if was_external then
+        self:selectEngine(Engines.BUILTIN)
+        UIManager:show(InfoMessage:new{
+            text = ("%s\n\n%s\n\n%s"):format(
+                ("%s could not be started."):format(name),
+                tostring(err or "no reason given"),
+                _("Switched back to the built-in engine.")),
+        })
+        -- The move that was being searched for still has to be played, or
+        -- the game sits there with the engine to move and nothing to move
+        -- it. Only ever retried after a switch, so an engine that fails on
+        -- its own behalf cannot loop.
+        if self.game:isEngineTurn() then
+            UIManager:nextTick(function() self:startEngineTurn() end)
+            return
+        end
+    end
+    self:updateStatus()
+    self:refreshStatus()
+end
+
+function ChessWidget:onSearchProgress(depth, score, move_text)
     if not self.thinking then return end
     local now = nowSeconds()
     if now - self.last_status_update < STATUS_THROTTLE then return end
     self.last_status_update = now
 
-    local text = ("%s  depth %d  %s"):format(_("Thinking…"), depth,
-                                             Search.formatScore(score, self.game.board.side))
-    if san then text = text .. "  " .. san end
+    local text = ("%s  depth %d"):format(_("Thinking…"), depth)
+    if score then
+        text = text .. "  " .. Search.formatScore(score, self.game.board.side)
+    end
+    if move_text then
+        -- The built-in engine reports its move in algebraic already; an
+        -- external one gives UCI, which is worth translating rather than
+        -- showing "e2e4" next to a board full of pieces.
+        text = text .. "  " .. (self:sanFor(move_text) or move_text)
+    end
     self.status_widget:setText(text)
     self:refreshStatus()
 end
 
-function ChessWidget:finishEngineTurn(move, info)
+--- Render a UCI move as algebraic, if that is what it is.
+function ChessWidget:sanFor(text)
+    if not text:match("^%a%d%a%d%a?$") then return nil end
+    local move = self.game.board:moveFromUci(text)
+    return move and self.game.board:moveToSan(move) or nil
+end
+
+function ChessWidget:finishEngineTurn(uci, info, failure)
+    self:stopPolling()
+    self.thinking = false
+    self.search_kind = nil
+
+    if failure then
+        self:onEngineFailure(failure)
+        return
+    end
     if self.abort_search then
-        -- The player cancelled; leave the position alone and hand back the move.
+        -- The player cancelled; leave the position alone.
         self:updateStatus()
         self:refreshStatus()
         return
     end
-    if not move then
+    if not uci then
         -- No legal move means the game is already over; let the result stand.
         self.game:updateResult()
         self:updateStatus()
@@ -1031,19 +1070,16 @@ function ChessWidget:finishEngineTurn(move, info)
     end
 
     if info then
-        logger.dbg(("KoboChess: depth %d, %d nodes in %.1fs")
-            :format(info.depth or 0, info.nodes or 0, info.elapsed or 0))
+        logger.dbg(("KoboChess: depth %d, %d nodes")
+            :format(info.depth or 0, info.nodes or 0))
     end
 
-    -- The move came back from a copy of the board. The position is the same,
-    -- so it is valid here too, but re-resolve it against the real board
-    -- rather than trust that: playing a move that is not legal in the actual
-    -- position would corrupt the game.
-    move = self.game.board:findMove(Board.moveFrom(move), Board.moveTo(move),
-                                    Board.movePromo(move) ~= 0
-                                        and Board.movePromo(move) or nil)
+    -- Re-resolved against the live board rather than trusted: the move was
+    -- chosen elsewhere -- in a clone, or in another process entirely -- and
+    -- playing something illegal here would corrupt the game.
+    local move = self.game.board:moveFromUci(uci)
     if not move then
-        logger.err("KoboChess: engine move is not legal in the live position")
+        logger.err("KoboChess: engine move is not legal in the live position:", uci)
         self:updateStatus(_("Engine error — your move"))
         self:refreshStatus()
         return
@@ -1075,7 +1111,27 @@ end
 function ChessWidget:cancelSearch()
     if not self.thinking then return false end
     self.abort_search = true
+    self.engine:cancel()
     return true
+end
+
+--==========================================================================
+-- Choosing an engine
+--==========================================================================
+
+--- Switch to the engine with this id, closing whatever was running.
+-- `initial` suppresses saving, for the one built during construction.
+function ChessWidget:selectEngine(id, initial)
+    local descriptor = Engines.find(self.engine_list, id)
+    if self.engine then self.engine:close() end
+
+    self.engine_descriptor = descriptor
+    self.engine = Engines.create(descriptor, { now = nowSeconds })
+
+    if not initial and self.settings then
+        self.settings:saveSetting("engine", descriptor.id)
+        self.settings:flush()
+    end
 end
 
 --==========================================================================
@@ -1135,6 +1191,9 @@ function ChessWidget:onOptionsMenu()
         { text = ("%s: %s"):format(_("Piece set"), prettySetName(self.piece_set)),
           enabled = #self.piece_sets > 1,
           callback = function() self:onChoosePieceSet() end },
+        { text = ("%s: %s"):format(_("Engine"), self.engine:name()),
+          enabled = not self.thinking and #self.engine_list > 1,
+          callback = function() self:onChooseEngine() end },
         { text = ("%s: %s"):format(_("Level"), level and level.name or "?"),
           enabled = not self.thinking,
           callback = function() self:onChooseLevel() end },
@@ -1157,7 +1216,7 @@ function ChessWidget:onNewGame()
             two_player = two_player,
             level = self.game.level,
         }
-        self.searcher:reset()
+        if self.engine.reset then self.engine:reset() end
         -- A two-player game is viewed from White's side by default; the
         -- players can turn it round with Flip. Saved before the rebuild,
         -- because that is where the layout reads it back from.
@@ -1273,6 +1332,25 @@ function ChessWidget:onChoosePieceSet()
     return self:showMenu(_("Piece set"), entries)
 end
 
+--- Choose which engine plays.
+function ChessWidget:onChooseEngine()
+    if self.thinking then return true end
+    local entries = {}
+    for _, descriptor in ipairs(self.engine_list) do
+        local marker = (descriptor.id == self.engine_descriptor.id) and "  ✓" or ""
+        entries[#entries + 1] = {
+            text = descriptor.name .. marker,
+            callback = function()
+                if descriptor.id == self.engine_descriptor.id then return end
+                self:selectEngine(descriptor.id)
+                self:updateStatus()
+                self:refreshStatus()
+            end,
+        }
+    end
+    return self:showMenu(_("Engine"), entries)
+end
+
 --- Choose the time control, which also resets the clock.
 function ChessWidget:onChooseTimeControl()
     local entries = {}
@@ -1368,66 +1446,55 @@ function ChessWidget:onHint()
     if self.thinking or not self.game:isPlayerTurn() then return true end
 
     self.thinking = true
-    self:updateStatus(_("Looking for a move…"))
+    self.abort_search = false
+    self.search_kind = "hint"
+    self:updateStatus(_("Looking for a move\xe2\x80\xa6"))
     self:refreshStatus()
 
-    local last_yield = nowSeconds()
-    local widget = self
-    -- On a copy, for the same reason as the engine's own turn.
-    local search_board = self.game.board:clone()
-    -- A hint is a short search: it should feel instant rather than strong.
-    self.search_co = coroutine.create(function()
-        return widget.searcher:think(search_board, {
-            max_depth = 6,
-            max_time = 3.0,
-            noise = 0,
-            now = nowSeconds,
-            on_tick = function()
-                if widget.abort_search then return false end
-                local now = nowSeconds()
-                if now - last_yield >= SEARCH_SLICE then
-                    coroutine.yield()
-                    last_yield = nowSeconds()
-                end
-                return true
-            end,
-        })
-    end)
-
-    local function step()
-        local co = self.search_co
-        if not co then return end
-        local ok, move = coroutine.resume(co)
-        if not ok then
-            logger.err("KoboChess: hint search failed:", move)
-            self.search_co, self.thinking = nil, false
-            self:updateStatus()
-            self:refreshStatus()
-            return
-        end
-        if coroutine.status(co) == "dead" then
-            self.search_co, self.thinking = nil, false
-            if move then
-                -- Show the suggestion by selecting the piece and lighting up
-                -- just the square it wants to go to.
-                local from, to = Board.moveFrom(move), Board.moveTo(move)
-                local changed = self.board_view:setSelected(from)
-                self.board_view.targets = { [to] = true }
-                changed[#changed + 1] = to
-                self:updateStatus(("%s %s"):format(_("Try"),
-                                                   self.game.board:moveToSan(move)))
-                self:refreshSquares(changed, "ui")
-                self:refreshStatus()
-            else
-                self:updateStatus()
-                self:refreshStatus()
-            end
-        else
-            UIManager:nextTick(step)
-        end
+    -- A hint is a short search: it should feel instant rather than strong,
+    -- and it is the same at every level -- somebody asking for help wants the
+    -- best answer available, not one handicapped to match the opponent.
+    local ok, err = self.engine:think{
+        game = self.game,
+        max_depth = 6,
+        max_time = 3.0,
+        noise = 0,
+        on_done = function(uci, _info, failure) self:finishHint(uci, failure) end,
+    }
+    if not ok then
+        self.thinking = false
+        self:onEngineFailure(err)
+        return true
     end
-    UIManager:nextTick(step)
+    self:schedulePoll()
     return true
+end
+
+function ChessWidget:finishHint(uci, failure)
+    self:stopPolling()
+    self.thinking = false
+    self.search_kind = nil
+
+    if failure then
+        self:onEngineFailure(failure)
+        return
+    end
+    local move = (not self.abort_search) and uci and self.game.board:moveFromUci(uci)
+    if not move then
+        self:updateStatus()
+        self:refreshStatus()
+        return
+    end
+
+    -- Show the suggestion by selecting the piece and lighting up just the
+    -- square it wants to go to.
+    local from, to = Board.moveFrom(move), Board.moveTo(move)
+    local changed = self.board_view:setSelected(from)
+    self.board_view.targets = { [to] = true }
+    changed[#changed + 1] = to
+    self:updateStatus(("%s %s"):format(_("Try"), self.game.board:moveToSan(move)))
+    self:refreshSquares(changed, "ui")
+    self:refreshStatus()
 end
 
 function ChessWidget:onResign()
@@ -1521,7 +1588,7 @@ end
 
 function ChessWidget:onClose()
     self:cancelSearch()
-    self.search_co = nil
+    self:stopPolling()
     -- Closing the board stops the clock. Nobody is thinking about the
     -- position while the reader is showing a book.
     if self.clock then self.clock:pause(nowSeconds()) end
@@ -1533,9 +1600,13 @@ function ChessWidget:onClose()
 end
 
 function ChessWidget:onCloseWidget()
-    self.search_co = nil
     self.thinking = false
+    self:stopPolling()
     self:stopClockTick()
+    -- An external engine is a process of its own: it has to be told to go,
+    -- or it would sit there holding its network in memory for the rest of
+    -- the session.
+    if self.engine then self.engine:close() end
     if self.board_view then self.board_view:onCloseWidget() end
     if self.status_widget then self.status_widget:free() end
     if self.history_widget then self.history_widget:free() end
