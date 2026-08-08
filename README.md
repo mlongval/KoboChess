@@ -1,15 +1,34 @@
 # Kobo Chess
 
+![platform](https://img.shields.io/badge/platform-Kobo%20eReader-2f3437?style=flat-square)
+![KOReader](https://img.shields.io/badge/KOReader-plugin-3b7dd8?style=flat-square)
+![NickelMenu](https://img.shields.io/badge/NickelMenu-entry-6b4fbb?style=flat-square)
+![Lua](https://img.shields.io/badge/Lua-LuaJIT-000080?style=flat-square&logo=lua&logoColor=white)
+![move generation](https://img.shields.io/badge/movegen-perft%20verified-2e8b57?style=flat-square)
+![no native code](https://img.shields.io/badge/native%20code-none-777?style=flat-square)
+
 Play chess against a built-in engine on a Kobo, as a KOReader plugin, with a
 NickelMenu entry so it opens in two taps from the home screen.
+
+<p align="center">
+  <img src="device.jpg" alt="Kobo Chess running on a Kobo Elipsa" width="480">
+</p>
 
 Built and tested for a **Kobo Elipsa (v1)** — 1404×1872, 10.3". The layout is
 computed from the screen size rather than hardcoded, so it adapts to other
 Kobos, but the Elipsa is what it was checked on.
 
-![The board on a 1404x1872 Elipsa](screenshot.png)
+The whole thing is Lua: the engine has no native code, so there is no
+toolchain to build and nothing to cross-compile for the device.
 
 ![The pieces](pieces_preview.png)
+
+<details>
+<summary>The same board, captured from the desktop build at the Elipsa's exact resolution</summary>
+
+![The board at 1404x1872](screenshot.png)
+
+</details>
 
 ## What it does
 
