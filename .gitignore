@@ -11,3 +11,6 @@
 
 __pycache__/
 *.pyc
+
+# Local review captures from the emulator.
+/preview-*.png

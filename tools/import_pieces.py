@@ -29,7 +29,7 @@ import argparse
 import os
 from collections import deque
 
-from PIL import Image
+from PIL import Image, ImageFilter
 
 # The default sheet: 6 columns by 2 rows, white row above black, K Q B N R P
 # across. Cells are named in reading order -- left to right, top to bottom.
@@ -49,6 +49,31 @@ FIT_W = 0.98
 FIT_H = 0.94
 # Gap left under the pieces so they do not sit flush against the square edge.
 BOTTOM_MARGIN = 0.03
+
+# Icon sets draw every piece to the same size, which on a board leaves the
+# pawns standing as tall as the kings. These restore the usual hierarchy, as a
+# fraction of the tallest piece.
+RELATIVE_HEIGHT = {
+    "p": 0.78,
+    "n": 0.90,
+    "b": 0.93,
+    "r": 0.87,
+    "q": 0.97,
+    "k": 1.00,
+}
+
+# Widen individual pieces. A bishop drawn as a narrow mitre reads as spindly
+# next to the rook and the pawn, and a little extra width fixes it without
+# touching its height.
+WIDTH_STRETCH = {
+    "b": 1.18,
+}
+
+# Thicken a piece's ink, in source pixels, before it is scaled down, for a
+# piece drawn lighter than its neighbours. Empty by default: thickening one
+# piece to match the others tends to overshoot and make it the odd one out in
+# the other direction, which is worse than the problem it solves.
+INK_DILATE = {}
 
 
 def strip_background(cell):
@@ -87,6 +112,28 @@ def strip_background(cell):
     return cell
 
 
+def thicken_ink(piece, amount):
+    """Grow the dark parts of a piece by `amount` pixels, in place of redrawing.
+
+    Only the ink spreads: transparent margins stay transparent, so the piece
+    gets bolder without gaining a background.
+    """
+    if amount <= 0:
+        return piece
+    rgb = piece.convert("RGB")
+    alpha = piece.split()[3]
+    # Dark and actually part of the piece.
+    ink = Image.eval(rgb.convert("L"), lambda v: 255 if v < 128 else 0)
+    ink = Image.composite(ink, Image.new("L", piece.size, 0), alpha.point(
+        lambda v: 255 if v > 128 else 0))
+    size = amount * 2 + 1
+    grown = ink.filter(ImageFilter.MaxFilter(size if size % 2 else size + 1))
+
+    out = piece.copy()
+    out.paste(Image.new("RGBA", piece.size, (0, 0, 0, 255)), (0, 0), grown)
+    return out
+
+
 def extract(sheet_path, grid, order):
     """Return {name: tightly-cropped RGBA image} for all twelve pieces."""
     cols, rows = grid
@@ -99,6 +146,8 @@ def extract(sheet_path, grid, order):
         col, row = index % cols, index // cols
         box = (int(col * cw), int(row * ch), int((col + 1) * cw), int((row + 1) * ch))
         cell = strip_background(sheet.crop(box))
+        # Thicken before cropping, so growing ink cannot run off the edge.
+        cell = thicken_ink(cell, INK_DILATE.get(name, 0))
         bbox = cell.getbbox()
         if bbox is None:
             raise SystemExit(
@@ -151,8 +200,11 @@ def main():
     baseline = args.size - int(args.size * BOTTOM_MARGIN)
 
     for name, piece in sorted(pieces.items()):
-        w = max(1, int(round(piece.width * scale)))
-        h = max(1, int(round(piece.height * scale)))
+        kind = name[1]
+        rel = RELATIVE_HEIGHT.get(kind, 1.0)
+        stretch = WIDTH_STRETCH.get(kind, 1.0)
+        w = max(1, int(round(piece.width * scale * rel * stretch)))
+        h = max(1, int(round(piece.height * scale * rel)))
         resized = piece.resize((w, h), Image.LANCZOS)
 
         canvas = Image.new("RGBA", (args.size, args.size), (0, 0, 0, 0))
