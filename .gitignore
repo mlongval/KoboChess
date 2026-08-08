@@ -1,6 +1,11 @@
 # Symlink into the session scratch directory under /tmp; not part of the project.
 /scratch
 
+# Working material that must not be redistributed or is simply too big to
+# track: source artwork whose licence does not permit shipping it, device
+# photos, and the desktop KOReader build used as a test harness.
+/local/
+
 # Exported games.
 *.pgn
 

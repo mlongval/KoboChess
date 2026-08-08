@@ -170,12 +170,14 @@ luajit test/search_test.lua
 `perft.lua` also checks that make/unmake restores the position exactly and
 that the incrementally updated Zobrist hash matches a full recomputation.
 
-The engine can also be run on the device itself, using KOReader's own LuaJIT,
-without disturbing the running app — useful for confirming the ARM build
-behaves identically and for timing the levels:
+`test/ondevice.lua` runs the engine on the Kobo itself, using KOReader's own
+LuaJIT and without disturbing the running app — it is how the level timings
+above were measured, and it confirms the ARM build behaves identically:
 
 ```sh
-ssh -p 2222 root@<kobo> 'cd /mnt/onboard/.adds/koreader && ./luajit /tmp/ondevice.lua'
+scp -P 2222 test/ondevice.lua root@<kobo>:/tmp/
+ssh -p 2222 root@<kobo> \
+    'cd /mnt/onboard/.adds/koreader && ./luajit /tmp/ondevice.lua'
 ```
 
 ## Notes on e-ink
@@ -250,4 +252,16 @@ EMULATE_READER_W=1404 EMULATE_READER_H=1872 ./koreader.sh ~/books
 ```
 
 That is how the screenshots and the layout were checked at the Elipsa's exact
-resolution.
+resolution. Running it under `Xvfb :99 -screen 0 1404x1872x24` makes it
+headless, and `tools/emulator_tap.py` then drives it by chess square:
+
+```sh
+python3 tools/emulator_tap.py e2 e4 s10 g1 f3
+```
+
+which is enough to play through a game, exercise the buttons and screenshot
+the result without touching a device.
+
+`local/` is for working material that is deliberately not tracked: source
+artwork whose licence does not allow redistributing it, device photos, and the
+desktop KOReader build. It is gitignored; nothing in the plugin depends on it.
