@@ -84,6 +84,11 @@ fi
 # build and a cross build can coexist without fighting over object files.
 rm -rf "$WORK/arm"
 cp -r "$WORK/src" "$WORK/arm"
+# The source tree may have been built for this machine already, and object
+# files left behind by that build would be fed to the ARM linker -- which
+# fails deep inside link-time optimisation, complaining about x86 flags, a
+# long way from anything resembling the actual cause.
+make -C "$WORK/arm/src" clean >/dev/null 2>&1 || true
 
 if patch -d "$WORK/arm" -p1 --forward --silent < "$ROOT/tools/stockfish-armv7-neon.patch"; then
     echo "Applied the armv7 NEON fix."
