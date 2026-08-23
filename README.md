@@ -9,7 +9,8 @@
 ![no native code](https://img.shields.io/badge/native%20code-none-777?style=flat-square)
 
 Play chess against a built-in engine on a Kobo, as a KOReader plugin, with a
-NickelMenu entry so it opens in two taps from the home screen.
+NickelMenu entry so it opens in two taps from the home screen. Runs on an
+Elipsa (2021) and on a 2013 Aura alike.
 
 <p align="center">
   <img src="device.jpg" alt="Kobo Chess running on a Kobo Elipsa" width="480">
@@ -162,6 +163,8 @@ engines/
     engine            the executable -- the executable bit is what
                       identifies it, so the name does not matter
     nn-….nnue         its network, if it needs one
+  stockfish-classic/
+    engine            a second engine is just a second folder
 ```
 
 Nothing under `engines/` is tracked by git. Stockfish is GPLv3 and its
@@ -169,10 +172,29 @@ network alone is over a hundred megabytes, so it is built rather than
 committed:
 
 ```sh
-tools/build_stockfish.sh          # cross-compile for the device
-tools/build_stockfish.sh --native # or for this machine, to test in the emulator
-./install.sh kobo                 # engines/ travels with the plugin
+tools/build_stockfish.sh            # Stockfish 18 + NNUE, for a Kobo with 1 GB
+tools/build_stockfish.sh --classic  # Stockfish 11, for a Kobo with 256 MB
+tools/build_stockfish.sh --native   # or for this machine, to test in the emulator
+./install.sh kobo                   # every engine in engines/ travels with the plugin
+./install.sh kobo --engine stockfish-classic   # or just the one named
 ```
+
+**Two builds, because memory.** Stockfish 18 reserves about 131 MB for its
+big neural network the moment it starts, before it has read a single file.
+On an Elipsa (1 GB) that is nothing. On a **Kobo Aura** (i.MX50, a single
+Cortex-A8, 256 MB with KOReader already resident) the allocation fails with
+`ENOMEM` and the engine aborts with `std::bad_alloc` — no rebuild of
+Stockfish 18 can fix that. Stockfish 11 is the last release with classical
+evaluation: no network, a few megabytes of RAM, and on the Aura it still
+reaches depth 14 in three seconds at about 70k nps — far stronger than the
+device needs. `--classic` builds it into `engines/stockfish-classic/`, beside
+the other, so one checkout serves both kinds of device; `install.sh --engine`
+picks which goes where (`--no-engines` for the built-in only). Whatever is
+not chosen is removed from the device, so a device never carries an engine
+that cannot run on it.
+
+One small difference: Stockfish 11's `UCI_Elo` bottoms out at 1350 rather
+than 1320, so its **Beginner** level is a shade stronger than Stockfish 18's.
 
 The script needs no root: it fetches a self-contained ARM toolchain into
 `local/` on first use, cross-compiles Stockfish static against musl — a Kobo's
@@ -257,7 +279,7 @@ kobochess.koplugin/       what gets copied to the device
   pieces/<set>/           twelve piece images per set; pick one under Options
 tools/gen_pieces.py       draws a piece set from scratch
 tools/import_pieces.py    builds a piece set from a sprite sheet
-tools/build_stockfish.sh  cross-compiles Stockfish for the device
+tools/build_stockfish.sh  cross-compiles Stockfish for the device (--classic for 256 MB Kobos)
 test/perft.lua            move generation correctness
 test/search_test.lua      tactics, self-play, interruption, speed
 nickelmenu/               the home-screen menu entry

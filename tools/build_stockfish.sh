@@ -3,11 +3,23 @@
 # Cross-compile Stockfish for a Kobo, and install it as a Kobo Chess engine.
 #
 #   tools/build_stockfish.sh              build for the device (armv7)
+#   tools/build_stockfish.sh --classic    Stockfish 11, for Kobos with little
+#                                         memory (see below)
 #   tools/build_stockfish.sh --native     build for this machine, to test in
 #                                         the emulator
 #
-# The result lands in kobochess.koplugin/engines/stockfish/, which install.sh
-# then copies to the device like anything else in the plugin.
+# The result lands in kobochess.koplugin/engines/stockfish/ (or
+# engines/stockfish-classic/ for --classic), which install.sh then copies to
+# the device like anything else in the plugin. The two can coexist; pick which
+# goes to a device with install.sh --engine.
+#
+# Why two builds: Stockfish 18 reserves about 131 MB for its big neural
+# network the moment it starts, before reading a single file. On a 1 GB
+# Elipsa that is fine. On a 256 MB Kobo Aura (i.MX50, Cortex-A8) the
+# allocation fails with ENOMEM and the engine aborts with std::bad_alloc.
+# Stockfish 11 is the last release with classical (hand-written) evaluation:
+# no network, a few MB of RAM, and on the Aura it still reaches depth 14 in
+# three seconds -- stronger than anyone needs on an e-reader.
 #
 # Nothing here needs root. The ARM toolchain is a self-contained tarball from
 # toolchains.bootlin.com, downloaded into local/ on first use.
@@ -42,7 +54,13 @@ WORK="$ROOT/local/stockfish"
 DEST="$ROOT/kobochess.koplugin/engines/stockfish"
 
 NATIVE=0
-[[ "${1:-}" == "--native" ]] && NATIVE=1
+CLASSIC=0
+case "${1:-}" in
+    --native) NATIVE=1 ;;
+    --classic) CLASSIC=1; SF_TAG="${SF_TAG_CLASSIC:-sf_11}"; DEST="$ROOT/kobochess.koplugin/engines/stockfish-classic" ;;
+    "") ;;
+    *) echo "unknown option: $1" >&2; exit 1 ;;
+esac
 
 for tool in git make curl tar; do
     command -v "$tool" >/dev/null || { echo "error: $tool is required" >&2; exit 1; }
@@ -77,6 +95,32 @@ if [[ ! -x "$TC/bin/arm-linux-g++" ]]; then
     curl -sL -o "$ROOT/local/toolchain/tc.tar.xz" "$TOOLCHAIN_URL"
     tar xf "$ROOT/local/toolchain/tc.tar.xz" -C "$ROOT/local/toolchain"
     rm -f "$ROOT/local/toolchain/tc.tar.xz"
+fi
+
+# --- classic build: Stockfish 11, no network, no patch ----------------------
+if [[ $CLASSIC -eq 1 ]]; then
+    rm -rf "$WORK/classic"
+    cp -r "$WORK/src" "$WORK/classic"
+    make -C "$WORK/classic/src" clean >/dev/null 2>&1 || true
+    echo "Cross-compiling Stockfish $SF_TAG (classical evaluation) for armv7…"
+    # Stockfish 11 predates NEON support; ARCH=armv7 is plain ARMv7-A, and
+    # its Makefile asks for the softfp float ABI, which this hard-float
+    # toolchain accepts. Verified on a Kobo Aura: ~70k nps, depth 14 in 3 s.
+    make -C "$WORK/classic/src" -j"$(nproc)" build \
+        ARCH=armv7 COMP=gcc \
+        CXX="$TC/bin/arm-linux-g++" \
+        EXTRALDFLAGS="-static" >/dev/null
+    "$TC/bin/arm-linux-strip" "$WORK/classic/src/stockfish"
+    mkdir -p "$DEST"
+    cp "$WORK/classic/src/stockfish" "$DEST/engine"
+    chmod +x "$DEST/engine"
+    echo
+    echo "Installed:"
+    ls -la "$DEST"
+    file "$DEST/engine" 2>/dev/null || true
+    echo
+    echo "Now run ./install.sh <target> --engine stockfish-classic to copy it to the device."
+    exit 0
 fi
 
 # --- patched copy of the tree ----------------------------------------------

@@ -14,6 +14,19 @@
 # Pass --with-nickelmenu to also install the NickelMenu entry, which puts
 # "Chess" on the Kobo home screen menu.
 #
+# Every folder under kobochess.koplugin/engines/ is copied unless you say
+# otherwise. Two Stockfish builds can be there at once (see
+# tools/build_stockfish.sh), and they suit different devices:
+#
+#   --engine stockfish            Stockfish 18 + NNUE; needs ~200 MB free RAM
+#                                 (Elipsa, Sage, Libra 2, ...)
+#   --engine stockfish-classic    Stockfish 11, classical eval, a few MB
+#                                 (Aura and other 256 MB devices)
+#   --no-engines                  the built-in Lua engine only
+#
+# --engine can be repeated. Engines not chosen are not copied, and are removed
+# from the device if an earlier install put them there.
+#
 # KOReader's built-in SSH server listens on a non-standard port and often with
 # no password, which plain ssh cannot do unattended. Override the commands for
 # that case:
@@ -41,17 +54,53 @@ usage() {
 
 WITH_NM=0
 TARGET=""
-for arg in "$@"; do
-    case "$arg" in
+ENGINES=()          # chosen with --engine; empty + ALL_ENGINES=1 means all
+ALL_ENGINES=1
+while [[ $# -gt 0 ]]; do
+    case "$1" in
         --with-nickelmenu) WITH_NM=1 ;;
+        --engine) ENGINES+=("${2:-}"); ALL_ENGINES=0; shift ;;
+        --engine=*) ENGINES+=("${1#*=}"); ALL_ENGINES=0 ;;
+        --no-engines) ALL_ENGINES=0 ;;
         -h|--help) usage ;;
-        -*) echo "unknown option: $arg" >&2; usage ;;
-        *) TARGET="$arg" ;;
+        -*) echo "unknown option: $1" >&2; usage ;;
+        *) TARGET="$1" ;;
     esac
+    shift
 done
 [[ -n "$TARGET" ]] || usage
 
 cd "$(dirname "$0")"
+
+# What gets copied is a staged copy of the plugin holding only the chosen
+# engines, so the same tree can serve devices with different memory budgets.
+# SRC is where that copy lives; "." when nothing is filtered.
+SRC="."
+if [[ $ALL_ENGINES -eq 0 ]]; then
+    for e in "${ENGINES[@]}"; do
+        if [[ ! -x "$PLUGIN_DIR/engines/$e/engine" ]]; then
+            echo "error: no engine at $PLUGIN_DIR/engines/$e/engine -- see tools/build_stockfish.sh" >&2
+            exit 1
+        fi
+    done
+    SRC=$(mktemp -d)
+    trap 'rm -rf "$SRC"' EXIT
+    mkdir -p "$SRC/$PLUGIN_DIR"
+    for entry in "$PLUGIN_DIR"/* "$PLUGIN_DIR"/.[!.]*; do
+        [[ -e "$entry" ]] || continue
+        [[ "$(basename "$entry")" == "engines" ]] && continue
+        cp -r "$entry" "$SRC/$PLUGIN_DIR/"
+    done
+    for e in "${ENGINES[@]}"; do
+        mkdir -p "$SRC/$PLUGIN_DIR/engines"
+        cp -r "$PLUGIN_DIR/engines/$e" "$SRC/$PLUGIN_DIR/engines/"
+    done
+    if [[ ${#ENGINES[@]} -eq 0 ]]; then
+        echo "Engines: built-in only"
+    else
+        echo "Engines: built-in + ${ENGINES[*]}"
+    fi
+fi
 
 if [[ ! -d "$PLUGIN_DIR" ]]; then
     echo "error: $PLUGIN_DIR not found (run this from the project root)" >&2
@@ -76,7 +125,7 @@ if [[ -d "$TARGET" ]]; then
     echo "Installing to $DEST"
     mkdir -p "$DEST"
     rm -rf "${DEST:?}/$PLUGIN_DIR"
-    cp -r "$PLUGIN_DIR" "$DEST/"
+    cp -r "$SRC/$PLUGIN_DIR" "$DEST/"
     # Kobos are FAT32; strip anything that cannot survive the trip.
     find "$DEST/$PLUGIN_DIR" -name '._*' -delete 2>/dev/null || true
     # And an engine has to stay runnable.
@@ -118,9 +167,9 @@ $SSH "$TARGET" "mkdir -p '$DEST' && rm -rf '$DEST/$PLUGIN_DIR'"
 
 # scp rather than rsync: stock Kobo firmware has no rsync.
 if command -v rsync >/dev/null 2>&1 && $SSH "$TARGET" 'command -v rsync' >/dev/null 2>&1; then
-    rsync -a --delete "$PLUGIN_DIR" "$TARGET:$DEST/"
+    rsync -a --delete "$SRC/$PLUGIN_DIR" "$TARGET:$DEST/"
 else
-    $SCP -q -r "$PLUGIN_DIR" "$TARGET:$DEST/"
+    $SCP -q -r "$SRC/$PLUGIN_DIR" "$TARGET:$DEST/"
 fi
 
 # An engine is only an engine if it can be run, and the copy may not have
