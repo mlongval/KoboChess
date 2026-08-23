@@ -20,7 +20,12 @@ Elipsa (2021) and on a 2013 Aura alike.
 
 Built and tested for a **Kobo Elipsa (v1)** — 1404×1872, 10.3". The layout is
 computed from the screen size rather than hardcoded, so it adapts to other
-Kobos, but the Elipsa is what it was checked on.
+Kobos — and it does: it also runs on a **first-generation Kobo Aura** from
+2013 (N514: 758×1024, 6", a single Cortex-A8 at 1 GHz, 256 MB), which is
+about as old and as small as a Kobo that can still run current KOReader
+gets. On that machine the built-in engine does roughly half the Elipsa's
+speed (Maximum takes ~25 s instead of Strong's), and Stockfish needs the
+`--classic` build described under [Engines](#engines).
 
 The whole thing is Lua: the engine has no native code, so there is no
 toolchain to build and nothing to cross-compile for the device.
@@ -135,7 +140,8 @@ measured on the Elipsa itself, not estimated:
 | Maximum | 20 | 25s | 8 | 25.0s |
 
 The Elipsa manages roughly 27,000 nodes/second in search and 125–165k in
-plain move generation, under LuaJIT's ARM JIT. Intermediate replies in about
+plain move generation, under LuaJIT's ARM JIT; the 2013 Aura, about 12,000
+and 50–80k, so each level takes roughly twice as long there. Intermediate replies in about
 a second, which is the level to use for a normal game; Strong and Maximum
 spend their whole budget and are worth it only if you want to think as well.
 
