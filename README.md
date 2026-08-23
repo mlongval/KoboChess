@@ -68,6 +68,27 @@ toolchain to build and nothing to cross-compile for the device.
 - Full rules: castling, en passant, promotion (including underpromotion),
   the fifty-move rule, threefold repetition and insufficient material.
 
+## Prerequisites
+
+- **[KOReader](https://github.com/koreader/koreader)** on the Kobo — the
+  plugin runs inside it. Install with
+  [KOReader's one-click installer](https://github.com/koreader/koreader/wiki/Installation-on-Kobo-devices)
+  or via NickelMenu. No jailbreak; a factory reset removes everything.
+- **[NickelMenu](https://pgaskin.net/NickelMenu/)** — optional, only for the
+  **Chess** entry on the Kobo home screen (`--with-nickelmenu`).
+- For the SSH install path, an SSH server on the device. A stock Kobo has
+  none; use KOReader's (*Network → SSH server*: port 2222, user `root`,
+  blank password), and on your computer `sshpass` because plain `ssh`
+  refuses a blank password:
+
+  ```sh
+  SSH="sshpass -p '' ssh -p 2222" SCP="sshpass -p '' scp -P 2222" \
+      ./install.sh root@<kobo-ip> --with-nickelmenu
+  ```
+
+  Or skip SSH entirely: plug the Kobo in and use the USB path below.
+- `python3` on your computer, only if you need to regenerate the piece images.
+
 ## Installing
 
 You need [KOReader](https://github.com/koreader/koreader) on the device
