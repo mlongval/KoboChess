@@ -19,4 +19,7 @@ fi
 mkdir -p "$KOREADER/settings"
 touch "$KOREADER/settings/kobochess_autostart"
 
-exec "$KOREADER/koreader.sh"
+# Started with a directory, KOReader opens its file browser there and never
+# the last book -- which it otherwise does first, with "Start with: last
+# document" set, before the plugin gets a chance to put the board on top.
+exec "$KOREADER/koreader.sh" /mnt/onboard

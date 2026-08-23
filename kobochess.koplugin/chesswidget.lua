@@ -25,6 +25,7 @@ local Button = require("ui/widget/button")
 local CenterContainer = require("ui/widget/container/centercontainer")
 local ConfirmBox = require("ui/widget/confirmbox")
 local Device = require("device")
+local Event = require("ui/event")
 local Font = require("ui/font")
 local FrameContainer = require("ui/widget/container/framecontainer")
 local Geom = require("ui/geometry")
@@ -214,6 +215,14 @@ end
 --==========================================================================
 
 function ChessWidget:init()
+    -- The board is laid out for portrait. If a book was being read in
+    -- landscape, turn the screen upright for the game and put it back on
+    -- close (see onCloseWidget); the reader underneath is covered meanwhile.
+    self.saved_rotation = Screen:getRotationMode()
+    if Screen:getWidth() > Screen:getHeight() then
+        Screen:setRotationMode(Screen.DEVICE_ROTATED_UPRIGHT)
+        self.forced_portrait = true
+    end
     self.screen_w = Screen:getWidth()
     self.screen_h = Screen:getHeight()
     self.covers_fullscreen = true
@@ -587,6 +596,16 @@ function ChessWidget:rebuildLayout()
     if self.history_widget then self.history_widget:free() end
     if self.clock_far then self.clock_far:free() end
     if self.clock_near then self.clock_near:free() end
+    if self.forced_portrait then
+        -- Asking, rather than setting the screen directly, lets whatever is
+        -- underneath (reader or file browser) re-lay itself out for the
+        -- orientation it had before. After this close completes, so that
+        -- the repaint it triggers is not painted over by our own.
+        local mode = self.saved_rotation
+        UIManager:nextTick(function()
+            UIManager:broadcastEvent(Event:new("SetRotationMode", mode))
+        end)
+    end
     self.clock_far, self.clock_near = nil, nil
 
     self:buildLayout()
@@ -1612,6 +1631,16 @@ function ChessWidget:onCloseWidget()
     if self.history_widget then self.history_widget:free() end
     if self.clock_far then self.clock_far:free() end
     if self.clock_near then self.clock_near:free() end
+    if self.forced_portrait then
+        -- Asking, rather than setting the screen directly, lets whatever is
+        -- underneath (reader or file browser) re-lay itself out for the
+        -- orientation it had before. After this close completes, so that
+        -- the repaint it triggers is not painted over by our own.
+        local mode = self.saved_rotation
+        UIManager:nextTick(function()
+            UIManager:broadcastEvent(Event:new("SetRotationMode", mode))
+        end)
+    end
     -- The board filled the screen, so leave a clean panel behind.
     UIManager:setDirty(nil, "full")
 end
