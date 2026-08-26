@@ -225,6 +225,143 @@ a folder with nothing runnable in it — the plugin says so, switches back to
 the built-in engine, and plays the move it was in the middle of, so a bad
 install cannot leave a game stuck waiting for a move that is never coming.
 
+### Playing against Claude
+
+An engine folder does not have to hold an engine. It has to hold something
+the plugin can execute that speaks UCI — and on this device, that can be
+three lines of shell handing the pipe to `nc`:
+
+```
+Kobo                            the machine running the daemon
+----                            ------------------------------
+engine_uci.lua  <--pipe-->  engines/claude/engine  <--tailnet-->  claude_engine.py
+                            (exec nc HOST PORT)                   (asks Claude)
+```
+
+`tools/claude_engine.py` is a UCI engine that answers `go` by asking Claude
+what to play. Nothing else changes: the plugin execs the shim, sends `uci`,
+`position … moves …`, `go`, and reads a `bestmove` back, exactly as it does
+with Stockfish, and Claude appears in **Options → Engine** because there is a
+folder under `engines/` with an executable in it.
+
+```sh
+python3 -m venv ~/.local/share/kobochess-claude-engine/venv
+~/.local/share/kobochess-claude-engine/venv/bin/pip install python-chess anthropic
+
+tools/make_claude_engine.sh 100.90.14.2      # write engines/claude/engine
+./install.sh root@<kobo> --engine claude      # send it to the device
+
+~/.local/share/kobochess-claude-engine/venv/bin/python tools/claude_engine.py
+```
+
+The daemon defaults to the `claude` CLI in headless mode, which needs no API
+key — it uses whatever credentials Claude Code already has on that machine.
+`--backend api` uses the Messages API instead (`ANTHROPIC_API_KEY`, or
+`ant auth login`), a few seconds faster per move. `--backend rehearsal` plays
+random legal moves without asking anybody, which is how the plumbing gets
+tested for free. A move takes roughly 10–20 seconds either way; the Lua engine
+at Maximum already takes 25, so the board's thinking path is used to it.
+
+**Every move is checked before it is believed.** Stockfish derives its moves
+from a board and cannot produce an illegal one. Claude is reading the position
+rather than computing over it, and occasionally answers with a move for a
+piece that moved eight plies ago, a bishop through a pawn, or the right idea
+in the wrong notation. So the daemon keeps its own board: it hands Claude the
+list of legal moves up front, checks the answer against that list, asks again
+with the list attached if it missed, and after a second miss plays a legal
+move anyway and says so in the log. Nothing illegal reaches the device, and
+the board never sits waiting for a move that is never coming. The move list
+is not only a guard, incidentally — it is most of why the moves are decent.
+
+**The levels become opponents rather than depths.** `UCI_Elo` is a rating an
+engine implements by playing measurably worse; Claude cannot dial itself that
+finely, so each of the six levels is a different temperament instead —
+Beginner, Casual, Club player, Attacker, Strategist, Full strength. The menu
+reads the same, and Maximum still means "play the best move you can find".
+
+**Running it unattended.** The Kobo cannot start anything on this machine,
+so the daemon has to be listening before the game asks for it — choosing
+Claude under **Options → Engine** opens a TCP connection, and that connection
+is the whole signal. `tools/claude-engine.service` is a `systemd --user` unit
+that keeps it up across reboots and restarts it if it dies:
+
+```sh
+cp tools/claude-engine.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now claude-engine
+journalctl --user -u claude-engine -f      # watch a game as it is played
+```
+
+It reads `~/.config/kobochess/watch.conf` for the addresses that are yours
+rather than the project's — the one it binds, and the Kobo the watcher below
+looks for:
+
+```sh
+mkdir -p ~/.config/kobochess
+cat > ~/.config/kobochess/watch.conf <<'EOF'
+KOBOCHESS_BIND=100.90.14.2          # this machine, on the tailnet
+KOBOCHESS_KOBO_HOST=100.90.14.7     # the Kobo
+KOBOCHESS_KOBO_NAME=kobo-elipsa     # as tailscale knows it
+EOF
+```
+
+It binds that address rather than every interface, and it sets `PATH`
+explicitly — a systemd unit gets a minimal one, and the default backend is the
+`claude` CLI under `~/.local/bin`; without that the engine would start, accept
+the connection, and fall back on every move.
+
+`--on-event CMD` runs `CMD <event> <text>` when a game starts or ends, and
+when a move had to be invented. `tools/notify_game.sh` is the default: it logs
+everything, and sends only the news. A game beginning is not news to the
+person who just started it on the device in their hands — an engine that has
+quietly begun playing random moves is.
+
+**Installing to a device that is almost never up.** The Kobo is asleep, off,
+or out of range nearly all the time, so there is no moment at which installing
+to it is simply something you do. `tools/kobo_watch.sh` is meant for cron:
+
+```
+*/5 * * * * /usr/bin/flock -n ~/logs/.lock_kobochess \
+    /bin/bash ~/Projects/KoboChess/tools/kobo_watch.sh >> ~/logs/kobochess-watch.log 2>&1
+```
+
+It costs one TCP connection every five minutes and says nothing until
+something changes. When the device does answer, it brings the plugin up to
+date and stops.
+
+It is deliberately **not** `install.sh`. That script deletes the plugin
+directory on the device and copies a fresh one, which is right when you are
+standing there watching it and wrong for a cron job: the Elipsa carries 109 MB
+of Stockfish and its network, and re-sending that over a link that drops —
+with nobody watching — would fail slowly and leave the device with no engine
+where it had one. So the watcher sends the plugin and the Claude shim (about
+half a megabyte) over the top of what is already there, and removes nothing.
+The same file list decides what is fingerprinted and what is sent, so the two
+can never disagree about what "already installed" means. For a clean install,
+run `install.sh` by hand.
+
+**The nudge.** A device being reachable and a device being installable are
+different things: KOReader's SSH server is a plugin you switch on by hand,
+from a menu, on the device — so a Kobo that is awake and on the tailnet with
+the server off will never be updated, and looks from here exactly like a Kobo
+that is asleep. Tailscale knows the difference, so the watcher asks it, and
+when the device is online but nothing is listening it says so, once, through
+`notify_game.sh` — the one piece of information only the person holding the
+device can act on. At most one message every six hours
+(`KOBOCHESS_NUDGE_EVERY`), because the Elipsa drops Wi-Fi whenever it sleeps
+and a message per transition would be noise, and noise gets muted.
+
+The other thing it cannot do anything about: KOReader loads plugins at
+startup, so a freshly installed version is the one you get next time you
+open it.
+
+**It is stateless, per move, on purpose.** Nothing is remembered between
+connections, so a Kobo whose Wi-Fi drops mid-game reconnects and carries on:
+the plugin sends the whole move list with every `position`, and that is the
+entire state. Nothing under `engines/` is tracked, so the shim — which has
+your host and port baked into it — stays on your machine and your device,
+like Stockfish.
+
 ## Four traps worth knowing about
 
 Each of these produced a bug that looked like something else entirely, so they
@@ -286,6 +423,11 @@ kobochess.koplugin/       what gets copied to the device
 tools/gen_pieces.py       draws a piece set from scratch
 tools/import_pieces.py    builds a piece set from a sprite sheet
 tools/build_stockfish.sh  cross-compiles Stockfish for the device (--classic for 256 MB Kobos)
+tools/claude_engine.py    a UCI engine that asks Claude for its moves
+tools/make_claude_engine.sh  writes the device end of it: engines/claude/engine
+tools/claude-engine.service  keeps the daemon listening (systemd --user)
+tools/kobo_watch.sh       installs to the Kobo whenever it next comes online
+tools/notify_game.sh      what to do when the daemon has something to say
 test/perft.lua            move generation correctness
 test/search_test.lua      tactics, self-play, interruption, speed
 nickelmenu/               the home-screen menu entry

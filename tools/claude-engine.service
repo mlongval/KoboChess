@@ -1,0 +1,49 @@
+[Unit]
+# KoboChess: Claude as a UCI engine, always listening.
+#
+# The Kobo has no way to start anything on this machine, so the daemon has to
+# be up before the game asks for it -- picking Claude under Options -> Engine
+# opens a TCP connection, and that connection IS the signal. Nothing else has
+# to happen: no wake-up call, no scheduling, no session waiting to be joined.
+#
+#   cp tools/claude-engine.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now claude-engine
+#   systemctl --user status claude-engine
+#   journalctl --user -u claude-engine -f      # watch a game as it is played
+#
+# Lingering is on for this user, so it runs whether or not anyone is logged in.
+Description=KoboChess: Claude as a UCI engine for the Kobo
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+
+# Bound to the tailnet address rather than every interface: the only thing
+# that should be able to ask Claude for a move is a device on the tailnet.
+# The address below is a plausible placeholder -- put this machine's own in
+# ~/.config/kobochess/watch.conf, which the watcher reads too:
+#
+#     KOBOCHESS_BIND=100.x.y.z
+#
+Environment=KOBOCHESS_BIND=100.90.14.2
+EnvironmentFile=-%h/.config/kobochess/watch.conf
+
+ExecStart=%h/.local/share/kobochess-claude-engine/venv/bin/python \
+    %h/Projects/KoboChess/tools/claude_engine.py \
+    --host ${KOBOCHESS_BIND} --port 9666 \
+    --on-event %h/Projects/KoboChess/tools/notify_game.sh
+
+# A systemd unit gets a minimal PATH, and the default backend is the `claude`
+# CLI, which lives under ~/.local/bin. Without this the engine starts, accepts
+# the connection, and then falls back on every single move.
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+
+# Tailscale may not be up yet at boot, and binding to an address that does not
+# exist yet fails. Just keep trying.
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target
