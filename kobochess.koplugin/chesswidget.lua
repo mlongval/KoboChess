@@ -275,10 +275,17 @@ function ChessWidget:init()
                 range = Geom:new{ x = 0, y = 0, w = self.screen_w, h = self.screen_h },
             },
         },
-        -- a swipe down from the top edge: the Kobo device menu (light, Wi-Fi, sleep…)
+        -- a swipe down from the top edge: the Kobo device menu (light, Wi-Fi, sleep…);
+        -- up/down along the left edge, or with two fingers: the light
         Swipe = {
             GestureRange:new{
                 ges = "swipe",
+                range = Geom:new{ x = 0, y = 0, w = self.screen_w, h = self.screen_h },
+            },
+        },
+        TwoFingerSwipe = {
+            GestureRange:new{
+                ges = "two_finger_swipe",
                 range = Geom:new{ x = 0, y = 0, w = self.screen_w, h = self.screen_h },
             },
         },
@@ -773,13 +780,16 @@ end
 --- The device menu of the Kobo fork (mykobo.koplugin), if it is there.
 function ChessWidget:onSwipe(arg, ges)
     local ok, DeviceMenu = pcall(require, "kobo_devicemenu")
-    if not (ok and DeviceMenu.isTopSwipe(ges)) then return false end
-    DeviceMenu.show{
+    return ok and DeviceMenu.handleSwipe(ges, {
         title = _("Chess"),
         close_app = function() self:onClose() end,
         on_close = function() UIManager:setDirty(self, "full") end,
-    }
-    return true
+    }) or false
+end
+
+function ChessWidget:onTwoFingerSwipe(arg, ges)
+    local ok, DeviceMenu = pcall(require, "kobo_devicemenu")
+    return ok and DeviceMenu.lightGesture(ges) or false
 end
 
 function ChessWidget:onTap(_, ges)
