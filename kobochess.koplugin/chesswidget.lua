@@ -275,6 +275,13 @@ function ChessWidget:init()
                 range = Geom:new{ x = 0, y = 0, w = self.screen_w, h = self.screen_h },
             },
         },
+        -- a swipe down from the top edge: the Kobo device menu (light, Wi-Fi, sleep…)
+        Swipe = {
+            GestureRange:new{
+                ges = "swipe",
+                range = Geom:new{ x = 0, y = 0, w = self.screen_w, h = self.screen_h },
+            },
+        },
     }
 
     self:buildLayout()
@@ -762,6 +769,18 @@ end
 --==========================================================================
 -- Input
 --==========================================================================
+
+--- The device menu of the Kobo fork (mykobo.koplugin), if it is there.
+function ChessWidget:onSwipe(arg, ges)
+    local ok, DeviceMenu = pcall(require, "kobo_devicemenu")
+    if not (ok and DeviceMenu.isTopSwipe(ges)) then return false end
+    DeviceMenu.show{
+        title = _("Chess"),
+        close_app = function() self:onClose() end,
+        on_close = function() UIManager:setDirty(self, "full") end,
+    }
+    return true
+end
 
 function ChessWidget:onTap(_, ges)
     -- Either clock is a pause button, reachable from whichever side of the
