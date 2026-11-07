@@ -787,6 +787,16 @@ function ChessWidget:onSwipe(arg, ges)
     }) or false
 end
 
+-- Auto-rotate: the board is laid out for portrait, so only upright <->
+-- upside down (the Kobo in the other hand) follows the turn.
+function ChessWidget:onSetRotationMode(mode)
+    local ok, DeviceMenu = pcall(require, "kobo_devicemenu")
+    if ok and DeviceMenu.followRotation(mode, true) then
+        UIManager:setDirty("all", "full")
+    end
+    return true
+end
+
 function ChessWidget:onTwoFingerSwipe(arg, ges)
     local ok, DeviceMenu = pcall(require, "kobo_devicemenu")
     return ok and DeviceMenu.lightGesture(ges) or false
