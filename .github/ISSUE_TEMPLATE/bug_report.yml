@@ -1,0 +1,79 @@
+name: Bug report
+description: Something doesn't work as it should. Please be exact; see CONTRIBUTING.md.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Please read [CONTRIBUTING.md](https://github.com/mlongval/KoboKit/blob/main/CONTRIBUTING.md) first.**
+        The maintainer doesn't write code; issues are passed as they are to Claude Code to investigate.
+        Write it so that someone who can't ask you questions can reproduce the problem.
+        Vague reports are closed without a reply.
+  - type: checkboxes
+    id: read
+    attributes:
+      label: Before you start
+      options:
+        - label: I have read the [disclaimer](https://github.com/mlongval/KoboKit/blob/main/DISCLAIMER.md) and understand there is no warranty and no promise of a fix.
+          required: true
+        - label: This issue is about one problem only.
+          required: true
+  - type: input
+    id: device
+    attributes:
+      label: Kobo model and firmware
+      description: "Kobo: Settings › Device information."
+      placeholder: "Kobo Elipsa (2021), firmware 4.38.23697"
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: KOReader and KoboKit versions
+      placeholder: "KOReader v2026.03, KoboKit v0.1.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: app
+    attributes:
+      label: Which part
+      options: [Home, Reader, Notan, Chess, Solitaire, Files, Settings, Device menu / light, Learning languages, KoboHub (Kobo side), KoboHub (server), Tailscale, Installation, Other]
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Tap by tap, starting from a known point (for example "Home screen, Wi-Fi off").
+      placeholder: |
+        1. On Home, tap Notan.
+        2. Tap the photo to show the panel.
+        3. Tap "More values" three times.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened instead
+      description: Exact error text, if any.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: crash.log and screenshots
+      description: "Attach .adds/koreader/crash.log from the KOBOeReader drive (or paste the last 100 lines), and a screenshot or photo if it helps."
+      render: text
+  - type: dropdown
+    id: always
+    attributes:
+      label: Does it happen every time?
+      options: ["Yes, every time", "Sometimes", "It happened once"]
+    validations:
+      required: true

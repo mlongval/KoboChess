@@ -1,5 +1,14 @@
 # Kobo Chess
 
+> **Part of [KoboKit](https://github.com/mlongval/KoboKit)**, a small app system for Kobo e-readers built
+> on KOReader. **Start there** for simple installation instructions.
+>
+> ⚠️ **Written by an AI, no warranty.** This code was written almost
+> entirely by Claude (Anthropic's AI). It comes with no guarantee of any
+> kind, including fitness for any purpose. It may crash, lose your data,
+> brick your Kobo or make it explode. That would not be my fault. Read the
+> [disclaimer](https://github.com/mlongval/KoboKit/blob/main/DISCLAIMER.md) and back up your Kobo first.
+
 ![version](https://img.shields.io/badge/version-0.01-c05621?style=flat-square)
 ![platform](https://img.shields.io/badge/platform-Kobo%20eReader-2f3437?style=flat-square)
 ![KOReader](https://img.shields.io/badge/KOReader-plugin-3b7dd8?style=flat-square)
@@ -248,7 +257,7 @@ folder under `engines/` with an executable in it.
 python3 -m venv ~/.local/share/kobochess-claude-engine/venv
 ~/.local/share/kobochess-claude-engine/venv/bin/pip install python-chess anthropic
 
-tools/make_claude_engine.sh 100.90.14.2      # write engines/claude/engine
+tools/make_claude_engine.sh 100.64.0.10      # write engines/claude/engine
 ./install.sh root@<kobo> --engine claude      # send it to the device
 
 ~/.local/share/kobochess-claude-engine/venv/bin/python tools/claude_engine.py
@@ -299,8 +308,8 @@ looks for:
 ```sh
 mkdir -p ~/.config/kobochess
 cat > ~/.config/kobochess/watch.conf <<'EOF'
-KOBOCHESS_BIND=100.90.14.2          # this machine, on the tailnet
-KOBOCHESS_KOBO_HOST=100.90.14.7     # the Kobo
+KOBOCHESS_BIND=100.64.0.10          # this machine, on the tailnet
+KOBOCHESS_KOBO_HOST=100.64.0.20     # the Kobo
 KOBOCHESS_KOBO_NAME=kobo-elipsa     # as tailscale knows it
 EOF
 ```
@@ -604,3 +613,13 @@ license:
 - **Stockfish** is GPLv3 and is not distributed here at all. `tools/build_stockfish.sh`
   builds it from upstream source on your own machine; nothing under `engines/`
   is tracked.
+
+## Issues
+
+Please open issues on [KoboKit](https://github.com/mlongval/KoboKit/issues) using its forms, and read
+[how issues work](https://github.com/mlongval/KoboKit/blob/main/CONTRIBUTING.md) first. Fixes are made by
+Claude Code, so only clearly described, reproducible problems and concrete
+change requests are accepted.
+
+Thank you to the **KOReader team**, whose reader and plugin system this is
+built on. Full credits for KoboKit: [CREDITS.md](https://github.com/mlongval/KoboKit/blob/main/CREDITS.md).

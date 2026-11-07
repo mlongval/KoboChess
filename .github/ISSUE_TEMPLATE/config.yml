@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: How issues work here (read first)
+    url: https://github.com/mlongval/KoboKit/blob/main/CONTRIBUTING.md
+    about: Only clearly described, reproducible issues are accepted.
+  - name: KOReader help
+    url: https://github.com/koreader/koreader/wiki
+    about: Questions about KOReader itself go to the KOReader project.

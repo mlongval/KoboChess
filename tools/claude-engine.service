@@ -27,7 +27,7 @@ Type=simple
 #
 #     KOBOCHESS_BIND=100.x.y.z
 #
-Environment=KOBOCHESS_BIND=100.90.14.2
+Environment=KOBOCHESS_BIND=100.64.0.10
 EnvironmentFile=-%h/.config/kobochess/watch.conf
 
 ExecStart=%h/.local/share/kobochess-claude-engine/venv/bin/python \

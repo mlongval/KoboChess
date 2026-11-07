@@ -9,7 +9,7 @@ that the pipe can have a tailnet in the middle of it. On the device, the
 "engine" is three lines of shell that hand the pipe to `nc`; everything real
 happens here.
 
-    Kobo                       ubuntu-s1
+    Kobo                       server
     ----                       ---------
     engine_uci.lua  <-pipe->  engines/claude/engine  <-tailnet->  this
                               (exec nc HOST PORT)

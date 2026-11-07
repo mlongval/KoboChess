@@ -12,7 +12,7 @@
 # because the alternative is a config file on a device that is awkward to edit
 # and easy to forget. Run this again to point it somewhere else.
 #
-#   tools/make_claude_engine.sh 100.90.14.2 [9666]
+#   tools/make_claude_engine.sh 100.64.0.10 [9666]
 #   ./install.sh root@<kobo> --engine claude
 #
 # engines/ is not tracked, so what this writes stays on this machine and on

@@ -40,7 +40,7 @@ CONF="${KOBOCHESS_CONF:-${XDG_CONFIG_HOME:-$HOME/.config}/kobochess/watch.conf}"
 # shellcheck source=/dev/null
 [ -r "$CONF" ] && . "$CONF"
 
-HOST="${KOBOCHESS_KOBO_HOST:-100.90.14.7}"         # the Kobo on the tailnet
+HOST="${KOBOCHESS_KOBO_HOST:-100.64.0.20}"         # the Kobo on the tailnet
 NAME="${KOBOCHESS_KOBO_NAME:-kobo-elipsa}"         # as tailscale knows it
 PORTS="${KOBOCHESS_KOBO_PORTS:-2222 22}"           # KOReader's SSH server, then dropbear
 STATE="${XDG_STATE_HOME:-$HOME/.local/state}/kobochess"

@@ -1,0 +1,45 @@
+name: Change request
+description: A concrete change or addition. Say exactly what, where, and how you'd know it's done.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Please read [CONTRIBUTING.md](https://github.com/mlongval/KoboKit/blob/main/CONTRIBUTING.md) first.**
+        Requests are passed as they are to Claude Code, so they must be concrete. Good: "Notan's Grid button should also offer 4×4."
+        Not good: "make Notan better." Wish lists and requests for devices that can't be tested are closed.
+  - type: checkboxes
+    id: read
+    attributes:
+      label: Before you start
+      options:
+        - label: I understand there is no promise this will be done.
+          required: true
+  - type: dropdown
+    id: app
+    attributes:
+      label: Which part
+      options: [Home, Reader, Notan, Chess, Solitaire, Files, Settings, Device menu / light, Learning languages, KoboHub (Kobo side), KoboHub (server), Documentation, Other]
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What should change
+      description: Exactly what should be different, and where (which screen, which button).
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why
+      description: What you're trying to do that you can't do now.
+    validations:
+      required: true
+  - type: textarea
+    id: done
+    attributes:
+      label: How would you know it's done?
+      placeholder: "Tapping Grid cycles off → 3×3 → 4×4 → off."
+    validations:
+      required: true
