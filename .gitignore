@@ -31,3 +31,6 @@ __pycache__/
 # network; it is built by tools/build_stockfish.sh and installed to the
 # device, but it does not belong in this repository.
 /kobochess.koplugin/engines/
+
+# Cobalt probe experiment (Aug 2026), kept local
+cobalt-*
