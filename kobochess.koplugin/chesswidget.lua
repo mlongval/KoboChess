@@ -486,9 +486,14 @@ function ChessWidget:buildLayout()
     self.buttons = {}
     local row = self:buildButtonRow({
         { id = "game",  text = _("Game ▾"), callback = function() self:onGameMenu() end },
-        { id = "undo",  text = _("Undo"),   callback = function() self:onUndo() end },
-        { id = "hint",  text = _("Hint"),   callback = function() self:onHint() end },
-        { id = "flip",  text = _("Flip"),   callback = function() self:onFlip() end },
+        -- Training (puzzles, famous games, openings) opens on a board of its
+        -- own, on top of this one; see chesstrain.lua.
+        { id = "train", text = _("Train ▾"), callback = function()
+            self:explain("train", function() self:onTrainMenu() end)
+        end },
+        { id = "undo",  text = _("Undo"),   callback = function() self:onUndo() end, weight = 0.8 },
+        { id = "hint",  text = _("Hint"),   callback = function() self:onHint() end, weight = 0.8 },
+        { id = "flip",  text = _("Flip"),   callback = function() self:onFlip() end, weight = 0.8 },
         -- Tap to clear ghosting now, hold to change how often it happens by
         -- itself. Ghosting is the one thing about an e-ink board that a user
         -- can see and the program cannot, so it needs a manual override, and
@@ -497,7 +502,7 @@ function ChessWidget:buildLayout()
         { id = "refresh", text = _("Refresh"),
           callback = function() self:onForceRefresh() end,
           hold_callback = function() self:onChooseRefreshInterval() end },
-        { id = "options", text = _("Options ▾"), callback = function() self:onOptionsMenu() end },
+        { id = "options", text = _("Options ▾"), callback = function() self:onOptionsMenu() end, weight = 1.25 },
     }, margin)
 
     -- The clocks, one at each end of the board, present only when there is a
@@ -635,7 +640,12 @@ end
 function ChessWidget:buildButtonRow(specs, margin)
     local gap = Size.padding.default
     local total_gap = gap * (#specs - 1)
-    local width = math.floor((self.screen_w - 2 * margin - total_gap) / #specs)
+    -- The menus ("Options ▾") have the longest labels and the one-word
+    -- buttons the shortest, so the menus get a little more of the row:
+    -- with seven buttons, equal shares would wrap "Options ▾" onto two lines.
+    local total_weight = 0
+    for _, spec in ipairs(specs) do total_weight = total_weight + (spec.weight or 1) end
+    local unit = (self.screen_w - 2 * margin - total_gap) / total_weight
 
     local group = HorizontalGroup:new{ align = "center" }
     for i, spec in ipairs(specs) do
@@ -648,7 +658,7 @@ function ChessWidget:buildButtonRow(specs, margin)
         -- nil is what Button expects, and it still rounds the highlight.
         local button = Button:new{
             text = spec.text,
-            width = width,
+            width = math.floor(unit * (spec.weight or 1)),
             callback = spec.callback,
             hold_callback = spec.hold_callback,
             show_parent = self,
@@ -720,6 +730,9 @@ function ChessWidget:updateStatus(text)
         status = ("%s to move  ·  %s"):format(to_move, mode)
         if self.game.board:inCheck() then
             status = status .. "  ·  " .. _("Check!")
+        else
+            local opening = self:openingName()
+            if opening then status = status .. "  ·  " .. opening end
         end
     end
 
@@ -737,6 +750,38 @@ function ChessWidget:updateStatus(text)
     self.buttons.undo:enableDisable(not self.thinking and self.game:canUndo()
                                     and not flagged)
     self.buttons.hint:enableDisable(not self.thinking and self.game:isPlayerTurn())
+end
+
+-- Names are looked for in the first moves only: past that no game is in
+-- the book any more, and the name found by then is kept.
+local OPENING_PLIES = 30
+
+--- The name of the opening the game is in (or came from), or nil. Worked
+-- out once per move count; the names list is only read once a move has
+-- been played, so opening the board costs nothing extra.
+function ChessWidget:openingName()
+    local moves = self.game.moves
+    local n = math.min(#moves, OPENING_PLIES)
+    if n == 0 or self.game.start_fen ~= Board.START_FEN then return nil end
+    local first = {}
+    for i = 1, n do first[i] = moves[i] end
+    -- the moves themselves are the key: an undo and another move must not
+    -- keep the old name
+    local key = table.concat(first, ",")
+    local cached = self.opening_cache
+    if cached and cached.key == key then return cached.name end
+    local ok, name = pcall(function()
+        local Openings = require("kobochess.openings")
+        local book = Openings.shared(self.plugin_path .. "/data/openings.tsv")
+        local entry = Openings.matchMoves(book, first)
+        return entry and entry.name
+    end)
+    if not ok then
+        logger.warn("KoboChess: opening names unavailable:", name)
+        name = nil
+    end
+    self.opening_cache = { key = key, name = name }
+    return name
 end
 
 --- Refresh everything except the board: the status line above it, and the
@@ -782,6 +827,16 @@ function ChessWidget:onSwipe(arg, ges)
     local ok, DeviceMenu = pcall(require, "kobo_devicemenu")
     return ok and DeviceMenu.handleSwipe(ges, {
         title = _("Chess"),
+        items = {
+            { text = _("Show explanations again"), callback = function()
+                require("chesshelpdialog").resetAll(self.settings)
+                for k in pairs(self.explained or {}) do self.explained[k] = nil end
+                UIManager:show(InfoMessage:new{
+                    text = _("Each button will explain itself again the next time it is used."),
+                    timeout = 3,
+                })
+            end },
+        },
         close_app = function() self:onClose() end,
         on_close = function() UIManager:setDirty(self, "full") end,
     }) or false
@@ -1219,6 +1274,61 @@ function ChessWidget:showMenu(title, entries)
     }
     UIManager:show(dialog)
     return true
+end
+
+--- The first time a button is used, a few words on what it does
+-- (chesshelpdialog.lua). Only the training buttons have one so far.
+function ChessWidget:explain(key, fn)
+    self.explained = self.explained or {}
+    require("chesshelpdialog").explainOnce(self, self.settings, self.explained, key, fn)
+end
+
+--- Training: puzzles, famous games, openings.
+function ChessWidget:onTrainMenu()
+    local function open(mode, daily)
+        return function() self:openTraining(mode, daily) end
+    end
+    return self:showMenu(_("Train"), {
+        { text = _("Puzzles"), enabled = not self.thinking, callback = open("puzzles") },
+        { text = _("Puzzle of the day"), enabled = not self.thinking, callback = open("puzzles", true) },
+        { text = _("Famous games"), enabled = not self.thinking, callback = open("masters") },
+        { text = _("Openings"), enabled = not self.thinking, callback = open("openings") },
+    })
+end
+
+--- Open training on top of the board. The game waits underneath, its clock
+-- stopped: nobody is thinking about it meanwhile.
+function ChessWidget:openTraining(mode, daily)
+    if self.thinking or self.train_widget then return end
+    if self.clock and self.clock:isRunning() then
+        self.clock:pause(nowSeconds())
+        self:stopClockTick()
+        self:updateClockText()
+        self:saveGame()
+    end
+    self.explained = self.explained or {}
+    local TrainWidget = require("chesstrain")
+    self.train_widget = TrainWidget:new{
+        settings = self.settings,
+        plugin_path = self.plugin_path,
+        piece_dir = self:pieceDir(),
+        show_coordinates = self.show_coordinates,
+        full_refresh_every = self.full_refresh_every,
+        mode = mode,
+        daily = daily,
+        -- shared, so an explanation seen on one screen is not shown again on the other
+        explained = self.explained,
+        on_back = function()
+            self.train_widget = nil
+            self.board_view:syncNightMode()
+            UIManager:setDirty(self, "full")
+        end,
+        on_close_app = function()
+            self.train_widget = nil
+            self:onClose()
+        end,
+    }
+    UIManager:show(self.train_widget, "full")
 end
 
 --- Everything to do with the game being played.

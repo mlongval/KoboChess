@@ -8,6 +8,8 @@
 
 # Exported games.
 *.pgn
+# ...but not the famous games that ship with the plugin.
+!/kobochess.koplugin/data/*.pgn
 
 __pycache__/
 *.pyc

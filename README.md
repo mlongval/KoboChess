@@ -66,12 +66,13 @@ toolchain to build and nothing to cross-compile for the device.
   pieces, and tapping either clock pauses and resumes.
 - Tap a piece to pick it up; legal destinations appear as dots, captures as
   rings. Tap again to move.
-- One row of buttons — **Game · Undo · Hint · Flip · Refresh · Options** —
+- One row of buttons — **Game · Train · Undo · Hint · Flip · Refresh · Options** —
   with everything that is not needed mid-game behind the two menus:
 
   | | |
   |---|---|
   | **Game ▾** | New game · Start/pause clock · Resign · Export PGN · Copy FEN |
+  | **Train ▾** | Puzzles · Puzzle of the day · Famous games · Openings — see [Training](#training) |
   | **Options ▾** | Piece set · Engine · Level · Clock · Screen refresh · Coordinates on/off |
 
 - **Refresh** clears e-ink ghosting on demand; hold it to set how often the
@@ -80,8 +81,131 @@ toolchain to build and nothing to cross-compile for the device.
   without restarting. Any further set dropped into `pieces/` appears there too.
 - The game is saved continuously, so it survives sleep, a KOReader restart,
   and a flat battery.
+- **Training**: tactics puzzles with a personal puzzle rating, famous games
+  to replay or to guess move by move, and an opening trainer. See
+  [Training](#training).
+- **Opening names**: during the first moves of a game the status line names
+  the opening being played ("Italian Game", "Sicilian Defense: Najdorf
+  Variation"…), and keeps the last name once the game leaves the book.
 - Full rules: castling, en passant, promotion (including underpromotion),
   the fifty-move rule, threefold repetition and insufficient material.
+
+## Training
+
+**Train ▾** on the board opens training on a board of its own, laid over the
+game: the game stays exactly as it was (a running clock is paused) and
+**Back to the game**, in every training menu and in the device menu, returns
+to it. The **X** leaves Chess altogether, back to Home, as it does on the
+board. Training has the same look as the board — a status line above, one
+line under it, one row of buttons with a menu at each end — and **Train ▾**
+at the right switches between the three parts.
+
+Every training button explains itself the first time it is tapped, with a
+short dialog and a *Do not show this again* box; **Show explanations
+again** in the device menu (swipe down from the top) brings them all back.
+
+### Puzzles
+
+| | |
+|---|---|
+| **Puzzle ▾** | Next puzzle · Puzzle of the day · Try again · Flip board · Your puzzle stats · Back to the game |
+| **Hint** | picks up the piece to move; tap again to see its square too |
+| **Solution** | plays the right move and the answer to it; tap again for the next |
+| **Next** | a new puzzle near your rating |
+
+The opponent's last move is already played and marked on the board; find the
+best reply. A wrong move is refused (nothing is played) and you try again.
+In a puzzle several moves long the opponent answers each right move at once.
+Any move that gives mate is accepted, even if the database has a different
+one. Once solved, the status line shows your new rating and the line under
+the board the puzzle's own rating and themes (fork, pin, mate in 2…).
+
+**Your puzzle rating** starts at 1200 and moves like an Elo rating: a clean
+solve (no wrong move, no hint, no solution) against a puzzle rated as you
+are gains about 10 points, more against a harder one; anything else loses.
+It moves twice as fast for the first 20 puzzles so it finds your level
+quickly. *Next* picks a puzzle you have not done, within 75 points of your
+rating (wider if there is none). Leaving a puzzle after a mistake or a hint
+counts as a miss; leaving one untouched does not count at all. **Puzzle of
+the day** is the same puzzle for everybody on a given date, taken from the
+middle of the rating range. Rating, puzzles done, clean solves and the best
+run of clean solves are saved with the game.
+
+### Famous games
+
+| | |
+|---|---|
+| **Game ▾** | Choose a game · Go to the start · Go to the end · Move list · Guess White's moves · Guess Black's moves · Flip board · Back to the game |
+| **◀ ▶** | one move back or forward (tapping the board also steps forward) |
+| **Guess** | guess the moves of the winning side; tap again to stop |
+
+Eleven games, from Légal's mate (1750) and the Immortal and Evergreen games
+to the Game of the Century (1956). The line under the board shows the last
+few moves; **Move list** shows the whole game with a sentence about why it is
+famous. **Guess the move** turns the game into a quiz: at each of one side's
+moves, play the move you think the master played — two points at the first
+try, one at the second, and after two misses the master's move is shown. The
+other side's moves are played for you. The place in the game is remembered.
+
+### Openings
+
+| | |
+|---|---|
+| **Opening ▾** | Choose an opening · Play as White · Play as Black · Next line · Your progress · Back to the game |
+| **Hint** | shows the book move |
+| **Again** | the line from the start |
+| **Flip** | turns the board round |
+
+**Choose an opening** lists the families (Sicilian Defense, Ruy Lopez,
+French Defense…), the ones with the most lines first, then the lines of the
+family, then which side to learn. The trainer plays the other side's book
+moves; you must play yours. A move that is not the book move is refused and
+the book move is shown on the board (piece picked up, square marked) and
+named in the status line. The status line also names the opening the moves
+so far make, which changes as the line goes on; the line under the board
+names the line being practised and how far you are.
+
+A line is **learned** after three runs in a row with no mistake and no hint;
+until then the status line says how many clean runs are still needed and
+**Again** repeats it. **Next line** goes to the next line of the same family
+not learned yet, and **Your progress** lists what is learned and what is
+being practised. Progress is kept per line and per side.
+
+### Where the training data comes from
+
+Three files under `kobochess.koplugin/data/`, about 1.3 MB together:
+
+| File | What | Source and licence |
+|---|---|---|
+| `puzzles.tsv` | 3,750 puzzles, 250 in each 100-point band from 800 to 2299, with themes | the [Lichess puzzle database](https://database.lichess.org/#puzzles), **CC0** (public domain dedication) |
+| `openings.tsv` | 3,865 named opening lines (ECO code, name, moves) | [lichess-org/chess-openings](https://github.com/lichess-org/chess-openings), **CC0** |
+| `masters.pgn` | eleven famous games, 1750–1956 | game scores are historical facts, not copyrightable; the file and its notes are ours (AGPL like the rest) |
+
+The puzzle and opening files are built by tools, so they can be rebuilt or
+resized:
+
+```sh
+# Puzzles: streams the database (about 300 MB compressed) and stops after
+# the first 1.5 million rows; keeps popular, well-rated puzzles only.
+curl -s https://database.lichess.org/lichess_db_puzzle.csv.zst \
+    | zstd -dc | python3 tools/build_puzzles.py [--per-bucket 250]
+
+# Openings: downloads a.tsv … e.tsv and converts each line to UCI moves and
+# a position key, with the plugin's own board (luajit needed).
+tools/build_openings.sh
+```
+
+The move lists in `masters.pgn` were written out and then checked move by
+move against the Wikipedia article on each game (or, for Lasker–Thomas and
+Steinitz–von Bardeleben, the articles on Edward Lasker and on the Hastings
+1895 tournament); `test/training_test.lua` replays every game on the
+plugin's board and checks that each one marked as ending in mate does.
+Réti–Tartakower, which has no article of its own, is checked by that replay
+only: eleven moves ending in the mate it is famous for.
+
+Opening names are matched by position, not by move order, so a game that
+reaches the Queen's Gambit Declined by way of 1. c4 is still named. The name
+shown is that of the last named position the game passed through.
 
 ## Prerequisites
 
@@ -417,6 +541,9 @@ widget. `chesswidget.lua` subclasses it to record the paint position.
 kobochess.koplugin/       what gets copied to the device
   main.lua                menu registration, autostart, save/restore
   chesswidget.lua         the full-screen UI
+  chesstrain.lua          training: puzzles, famous games, openings (its own screen)
+  chesshelpdialog.lua     the first-use explanation of a button
+  chesshelptext.lua       the explanations
   boardview.lua           the 8x8 board, painted directly to the blitbuffer
   kobochess/
     board.lua             0x88 board, move generation, make/unmake, FEN
@@ -427,6 +554,11 @@ kobochess.koplugin/       what gets copied to the device
     engines.lua           which engines are installed
     engine_lua.lua        the built-in engine, behind the shared interface
     engine_uci.lua        an external engine, over a pipe
+    pgn.lua               SAN moves and PGN games
+    puzzles.lua           puzzle collection, checking moves, puzzle rating
+    masters.lua           famous games: stepping, guess the move
+    openings.lua          opening names by position, the opening trainer
+  data/                   puzzles.tsv, openings.tsv, masters.pgn (see Training)
   engines/<name>/         an installed UCI engine (not tracked)
   pieces/<set>/           twelve piece images per set; pick one under Options
 tools/gen_pieces.py       draws a piece set from scratch
@@ -439,6 +571,9 @@ tools/kobo_watch.sh       installs to the Kobo whenever it next comes online
 tools/notify_game.sh      what to do when the daemon has something to say
 test/perft.lua            move generation correctness
 test/search_test.lua      tactics, self-play, interruption, speed
+test/training_test.lua    PGN/SAN parsing, puzzles, openings, guess the move
+tools/build_puzzles.py    cuts the Lichess puzzle database down to data/puzzles.tsv
+tools/build_openings.sh   fetches the opening names, runs build_openings.lua
 nickelmenu/               the home-screen menu entry
 install.sh                deploy to the device
 ```
@@ -453,11 +588,21 @@ rules are implemented correctly:
 luajit test/perft.lua 2      # arg = seconds allowed per position
 luajit test/search_test.lua
 luajit test/clock_test.lua
+luajit test/training_test.lua
 ```
 
 The clock takes "now" as an argument rather than reading it, the same way the
 search does, so `clock_test.lua` makes three minutes pass in a microsecond and
 checks the increment, the flag and the save format exactly.
+
+`training_test.lua` covers SAN (castling, promotion, en passant,
+disambiguation, over-specified and sloppy notation) and PGN parsing
+(comments, nested variations, NAGs, several games, an illegal move), puzzle
+checking (wrong moves refused, the opponent's answers, an alternative mate),
+the puzzle rating, choosing puzzles and the puzzle of the day, opening
+matching (including a transposition) and the trainer, and guess-the-move
+scoring. It also plays every bundled puzzle to its end, replays every
+opening line and every famous game, so a bad data file fails the tests.
 
 `perft.lua` also checks that make/unmake restores the position exactly and
 that the incrementally updated Zobrist hash matches a full recomputation.
@@ -610,6 +755,12 @@ license:
   used under the Vecteezy Free License with the attribution given above. The
   `drawn` and `line-icons` sets are generated by `tools/gen_pieces.py` and are
   covered by the AGPL like the rest of the plugin.
+- **Training data**: the puzzles (`data/puzzles.tsv`) come from the
+  [Lichess puzzle database](https://database.lichess.org/#puzzles) and the
+  opening names (`data/openings.tsv`) from
+  [lichess-org/chess-openings](https://github.com/lichess-org/chess-openings),
+  both released under **CC0** by Lichess. Thanks to Lichess for making them
+  free. The famous games are historical records; see [Training](#training).
 - **Stockfish** is GPLv3 and is not distributed here at all. `tools/build_stockfish.sh`
   builds it from upstream source on your own machine; nothing under `engines/`
   is tracked.

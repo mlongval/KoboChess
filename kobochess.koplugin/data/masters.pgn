@@ -1,0 +1,142 @@
+[Event "Casual game"]
+[Site "Paris"]
+[Date "1750.??.??"]
+[White "Kermur de Legal"]
+[Black "Saint Brie"]
+[Result "1-0"]
+[Note "The trap that gave Legal's mate its name: the queen is given away for a mate with three minor pieces."]
+
+1. e4 e5 2. Nf3 d6 3. Bc4 Bg4 4. Nc3 g6 5. Nxe5 Bxd1 6. Bxf7+ Ke7 7. Nd5# 1-0
+
+[Event "Casual game"]
+[Site "London"]
+[Date "1851.06.21"]
+[White "Adolf Anderssen"]
+[Black "Lionel Kieseritzky"]
+[Result "1-0"]
+[Note "The Immortal Game. White gives up both rooks, a bishop and the queen, and mates with the three minor pieces left."]
+
+1. e4 e5 2. f4 exf4 3. Bc4 Qh4+ 4. Kf1 b5 5. Bxb5 Nf6 6. Nf3 Qh6 7. d3 Nh5
+8. Nh4 Qg5 9. Nf5 c6 10. g4 Nf6 11. Rg1 cxb5 12. h4 Qg6 13. h5 Qg5 14. Qf3 Ng8
+15. Bxf4 Qf6 16. Nc3 Bc5 17. Nd5 Qxb2 18. Bd6 Bxg1 19. e5 Qxa1+ 20. Ke2 Na6
+21. Nxg7+ Kd8 22. Qf6+ Nxf6 23. Be7# 1-0
+
+[Event "Casual game"]
+[Site "Berlin"]
+[Date "1852.??.??"]
+[White "Adolf Anderssen"]
+[Black "Jean Dufresne"]
+[Result "1-0"]
+[Note "The Evergreen Game. An Evans Gambit that ends in a queen sacrifice and a mate by two bishops."]
+
+1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 4. b4 Bxb4 5. c3 Ba5 6. d4 exd4 7. O-O d3
+8. Qb3 Qf6 9. e5 Qg6 10. Re1 Nge7 11. Ba3 b5 12. Qxb5 Rb8 13. Qa4 Bb6
+14. Nbd2 Bb7 15. Ne4 Qf5 16. Bxd3 Qh5 17. Nf6+ gxf6 18. exf6 Rg8 19. Rad1 Qxf3
+20. Rxe7+ Nxe7 21. Qxd7+ Kxd7 22. Bf5+ Ke8 23. Bd7+ Kf8 24. Bxe7# 1-0
+
+[Event "Paris Opera"]
+[Site "Paris"]
+[Date "1858.??.??"]
+[White "Paul Morphy"]
+[Black "Duke Karl of Brunswick and Count Isouard"]
+[BlackShort "Brunswick and Isouard"]
+[Result "1-0"]
+[Note "The Opera Game, played in a box at the opera. A model of fast development: every white move brings a new piece into play."]
+
+1. e4 e5 2. Nf3 d6 3. d4 Bg4 4. dxe5 Bxf3 5. Qxf3 dxe5 6. Bc4 Nf6 7. Qb3 Qe7
+8. Nc3 c6 9. Bg5 b5 10. Nxb5 cxb5 11. Bxb5+ Nbd7 12. O-O-O Rd8 13. Rxd7 Rxd7
+14. Rd1 Qe6 15. Bxd7+ Nxd7 16. Qb8+ Nxb8 17. Rd8# 1-0
+
+[Event "Amsterdam"]
+[Site "Amsterdam"]
+[Date "1889.??.??"]
+[White "Emanuel Lasker"]
+[Black "Johann Bauer"]
+[Result "1-0"]
+[Note "The first famous double bishop sacrifice: both bishops are given up to strip the black king."]
+
+1. f4 d5 2. e3 Nf6 3. b3 e6 4. Bb2 Be7 5. Bd3 b6 6. Nc3 Bb7 7. Nf3 Nbd7
+8. O-O O-O 9. Ne2 c5 10. Ng3 Qc7 11. Ne5 Nxe5 12. Bxe5 Qc6 13. Qe2 a6
+14. Nh5 Nxh5 15. Bxh7+ Kxh7 16. Qxh5+ Kg8 17. Bxg7 Kxg7 18. Qg4+ Kh7 19. Rf3 e5
+20. Rh3+ Qh6 21. Rxh6+ Kxh6 22. Qd7 Bf6 23. Qxb7 Kg7 24. Rf1 Rab8 25. Qd7 Rfd8
+26. Qg4+ Kf8 27. fxe5 Bg7 28. e6 Rb7 29. Qg6 f6 30. Rxf6+ Bxf6 31. Qxf6+ Ke8
+32. Qh8+ Ke7 33. Qg7+ Kxe6 34. Qxb7 Rd6 35. Qxa6 d4 36. exd4 cxd4 37. h4 d3
+38. Qxd3 1-0
+
+[Event "Hastings"]
+[Site "Hastings"]
+[Date "1895.??.??"]
+[White "Wilhelm Steinitz"]
+[Black "Curt von Bardeleben"]
+[Result "1-0"]
+[Note "The rook on the seventh rank cannot be taken without loss, and keeps checking. Black left the hall rather than resign."]
+
+1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 4. c3 Nf6 5. d4 exd4 6. cxd4 Bb4+ 7. Nc3 d5
+8. exd5 Nxd5 9. O-O Be6 10. Bg5 Be7 11. Bxd5 Bxd5 12. Nxd5 Qxd5 13. Bxe7 Nxe7
+14. Re1 f6 15. Qe2 Qd7 16. Rac1 c6 17. d5 cxd5 18. Nd4 Kf7 19. Ne6 Rhc8
+20. Qg4 g6 21. Ng5+ Ke8 22. Rxe7+ Kf8 23. Rf7+ Kg8 24. Rg7+ Kh8 25. Rxh7+ 1-0
+
+[Event "Lodz"]
+[Site "Lodz"]
+[Date "1907.??.??"]
+[White "Georg Rotlewi"]
+[Black "Akiba Rubinstein"]
+[Result "0-1"]
+[Note "Rubinstein's Immortal. Black's bishops aim at the white king along two long diagonals, and a string of sacrifices opens them."]
+
+1. d4 d5 2. Nf3 e6 3. e3 c5 4. c4 Nc6 5. Nc3 Nf6 6. dxc5 Bxc5 7. a3 a6
+8. b4 Bd6 9. Bb2 O-O 10. Qd2 Qe7 11. Bd3 dxc4 12. Bxc4 b5 13. Bd3 Rd8
+14. Qe2 Bb7 15. O-O Ne5 16. Nxe5 Bxe5 17. f4 Bc7 18. e4 Rac8 19. e5 Bb6+
+20. Kh1 Ng4 21. Be4 Qh4 22. g3 Rxc3 23. gxh4 Rd2 24. Qxd2 Bxe4+ 25. Qg2 Rh3 0-1
+
+[Event "Vienna"]
+[Site "Vienna"]
+[Date "1910.??.??"]
+[White "Richard Reti"]
+[Black "Savielly Tartakower"]
+[Result "1-0"]
+[Note "A queen sacrifice and a double check: one of the shortest games ever won by a master against a master."]
+
+1. e4 c6 2. d4 d5 3. Nc3 dxe4 4. Nxe4 Nf6 5. Qd3 e5 6. dxe5 Qa5+ 7. Bd2 Qxe5
+8. O-O-O Nxe4 9. Qd8+ Kxd8 10. Bg5+ Kc7 11. Bd8# 1-0
+
+[Event "Casual game"]
+[Site "London"]
+[Date "1912.??.??"]
+[White "Edward Lasker"]
+[Black "George Alan Thomas"]
+[Result "1-0"]
+[Note "A king hunt: after the queen sacrifice the black king is driven from g8 all the way to g1."]
+
+1. d4 e6 2. Nf3 f5 3. Nc3 Nf6 4. Bg5 Be7 5. Bxf6 Bxf6 6. e4 fxe4 7. Nxe4 b6
+8. Ne5 O-O 9. Bd3 Bb7 10. Qh5 Qe7 11. Qxh7+ Kxh7 12. Nxf6+ Kh6 13. Neg4+ Kg5
+14. h4+ Kf4 15. g3+ Kf3 16. Be2+ Kg2 17. Rh2+ Kg1 18. Kd2# 1-0
+
+[Event "Breslau"]
+[Site "Breslau"]
+[Date "1912.??.??"]
+[White "Stefan Levitsky"]
+[Black "Frank Marshall"]
+[Result "0-1"]
+[Note "The queen move that is said to have made the spectators shower the board with gold coins: the queen can be taken three ways, and each loses."]
+
+1. d4 e6 2. e4 d5 3. Nc3 c5 4. Nf3 Nc6 5. exd5 exd5 6. Be2 Nf6 7. O-O Be7
+8. Bg5 O-O 9. dxc5 Be6 10. Nd4 Bxc5 11. Nxe6 fxe6 12. Bg4 Qd6 13. Bh3 Rae8
+14. Qd2 Bb4 15. Bxf6 Rxf6 16. Rad1 Qc5 17. Qe2 Bxc3 18. bxc3 Qxc3 19. Rxd5 Nd4
+20. Qh5 Ref8 21. Re5 Rh6 22. Qg5 Rxh3 23. Rc5 Qg3 0-1
+
+[Event "Rosenwald Memorial"]
+[Site "New York"]
+[Date "1956.10.17"]
+[White "Donald Byrne"]
+[Black "Robert James Fischer"]
+[Result "0-1"]
+[Note "The Game of the Century, won by a thirteen-year-old. Black gives up the queen on move 17 and takes back far more."]
+
+1. Nf3 Nf6 2. c4 g6 3. Nc3 Bg7 4. d4 O-O 5. Bf4 d5 6. Qb3 dxc4 7. Qxc4 c6
+8. e4 Nbd7 9. Rd1 Nb6 10. Qc5 Bg4 11. Bg5 Na4 12. Qa3 Nxc3 13. bxc3 Nxe4
+14. Bxe7 Qb6 15. Bc4 Nxc3 16. Bc5 Rfe8+ 17. Kf1 Be6 18. Bxb6 Bxc4+ 19. Kg1 Ne2+
+20. Kf1 Nxd4+ 21. Kg1 Ne2+ 22. Kf1 Nc3+ 23. Kg1 axb6 24. Qb4 Ra4 25. Qxb6 Nxd1
+26. h3 Rxa2 27. Kh2 Nxf2 28. Re1 Rxe1 29. Qd8+ Bf8 30. Nxe1 Bd5 31. Nf3 Ne4
+32. Qb8 b5 33. h4 h5 34. Ne5 Kg7 35. Kg1 Bc5+ 36. Kf1 Ng3+ 37. Ke1 Bb4+
+38. Kd1 Bb3+ 39. Kc1 Ne2+ 40. Kb1 Nc3+ 41. Kc1 Rc2# 0-1
