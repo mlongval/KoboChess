@@ -23,6 +23,8 @@
 #   --engine stockfish-classic    Stockfish 11, classical eval, a few MB
 #                                 (Aura and other 256 MB devices)
 #   --no-engines                  the built-in Lua engine only
+#   --keep-engines                copy only the app; the engines already on
+#                                 the device stay as they are (quick updates)
 #
 # --engine can be repeated. Engines not chosen are not copied, and are removed
 # from the device if an earlier install put them there.
@@ -56,12 +58,14 @@ WITH_NM=0
 TARGET=""
 ENGINES=()          # chosen with --engine; empty + ALL_ENGINES=1 means all
 ALL_ENGINES=1
+KEEP_ENGINES=0
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --with-nickelmenu) WITH_NM=1 ;;
         --engine) ENGINES+=("${2:-}"); ALL_ENGINES=0; shift ;;
         --engine=*) ENGINES+=("${1#*=}"); ALL_ENGINES=0 ;;
         --no-engines) ALL_ENGINES=0 ;;
+        --keep-engines) ALL_ENGINES=0; KEEP_ENGINES=1 ;;
         -h|--help) usage ;;
         -*) echo "unknown option: $1" >&2; usage ;;
         *) TARGET="$1" ;;
@@ -95,7 +99,9 @@ if [[ $ALL_ENGINES -eq 0 ]]; then
         mkdir -p "$SRC/$PLUGIN_DIR/engines"
         cp -r "$PLUGIN_DIR/engines/$e" "$SRC/$PLUGIN_DIR/engines/"
     done
-    if [[ ${#ENGINES[@]} -eq 0 ]]; then
+    if [[ $KEEP_ENGINES -eq 1 ]]; then
+        echo "Engines: the ones already on the device are kept"
+    elif [[ ${#ENGINES[@]} -eq 0 ]]; then
         echo "Engines: built-in only"
     else
         echo "Engines: built-in + ${ENGINES[*]}"
@@ -124,8 +130,15 @@ if [[ -d "$TARGET" ]]; then
     fi
     echo "Installing to $DEST"
     mkdir -p "$DEST"
+    if [[ $KEEP_ENGINES -eq 1 && -d "$DEST/$PLUGIN_DIR/engines" ]]; then
+        rm -rf "${DEST:?}/.kobochess-engines"
+        mv "$DEST/$PLUGIN_DIR/engines" "$DEST/.kobochess-engines"
+    fi
     rm -rf "${DEST:?}/$PLUGIN_DIR"
     cp -r "$SRC/$PLUGIN_DIR" "$DEST/"
+    if [[ -d "$DEST/.kobochess-engines" ]]; then
+        mv "$DEST/.kobochess-engines" "$DEST/$PLUGIN_DIR/engines"
+    fi
     # Kobos are FAT32; strip anything that cannot survive the trip.
     find "$DEST/$PLUGIN_DIR" -name '._*' -delete 2>/dev/null || true
     # And an engine has to stay runnable.
@@ -163,13 +176,24 @@ fi
 echo "Found KOReader at $KOREADER_PATH"
 
 DEST="$KOREADER_PATH/plugins"
-$SSH "$TARGET" "mkdir -p '$DEST' && rm -rf '$DEST/$PLUGIN_DIR'"
+if [[ $KEEP_ENGINES -eq 1 ]]; then
+    # the engines step aside while the app is replaced, then come back
+    $SSH "$TARGET" "mkdir -p '$DEST' && rm -rf '$DEST/.kobochess-engines' &&
+        { [ ! -d '$DEST/$PLUGIN_DIR/engines' ] || mv '$DEST/$PLUGIN_DIR/engines' '$DEST/.kobochess-engines'; } &&
+        rm -rf '$DEST/$PLUGIN_DIR'"
+else
+    $SSH "$TARGET" "mkdir -p '$DEST' && rm -rf '$DEST/$PLUGIN_DIR'"
+fi
 
 # scp rather than rsync: stock Kobo firmware has no rsync.
 if command -v rsync >/dev/null 2>&1 && $SSH "$TARGET" 'command -v rsync' >/dev/null 2>&1; then
     rsync -a --delete "$SRC/$PLUGIN_DIR" "$TARGET:$DEST/"
 else
     $SCP -q -r "$SRC/$PLUGIN_DIR" "$TARGET:$DEST/"
+fi
+
+if [[ $KEEP_ENGINES -eq 1 ]]; then
+    $SSH "$TARGET" "[ ! -d '$DEST/.kobochess-engines' ] || mv '$DEST/.kobochess-engines' '$DEST/$PLUGIN_DIR/engines'"
 fi
 
 # An engine is only an engine if it can be run, and the copy may not have

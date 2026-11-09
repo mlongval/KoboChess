@@ -328,7 +328,7 @@ evaluation: no network, a few megabytes of RAM, and on the Aura it still
 reaches depth 14 in three seconds at about 70k nps — far stronger than the
 device needs. `--classic` builds it into `engines/stockfish-classic/`, beside
 the other, so one checkout serves both kinds of device; `install.sh --engine`
-picks which goes where (`--no-engines` for the built-in only). Whatever is
+picks which goes where (`--no-engines` for the built-in only, `--keep-engines` to update only the app and leave the engines already on the device alone). Whatever is
 not chosen is removed from the device, so a device never carries an engine
 that cannot run on it.
 
