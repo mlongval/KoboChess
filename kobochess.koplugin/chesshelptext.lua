@@ -9,6 +9,10 @@ local _ = require("gettext")
 
 return {
     -- The board's own buttons
+    close = {
+        title = _("X: close Chess"),
+        text = _("The X at the top right closes Chess and takes you back to Home.\n\nNothing is lost: the game you are playing is saved after every move, and it is there again, exactly as you left it, the next time you open Chess.\n\nA running clock is paused while Chess is closed."),
+    },
     game = {
         title = _("Game menu"),
         text = _("Game ▾ opens the menu for the game you are playing:\n\n• New game: start over, as White, as Black, or two players on one Kobo\n• Start clock / Pause clock (two-player games with a clock)\n• Resign: give up this game\n• Export PGN: save the game as a file\n• Copy FEN: copy the position as one line of text\n\nThe game is saved after every move, so you never lose it by closing Chess or letting the Kobo sleep."),

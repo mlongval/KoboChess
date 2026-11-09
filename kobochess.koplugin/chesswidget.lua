@@ -464,7 +464,7 @@ function ChessWidget:buildLayout()
         align = "center",
         title = _("Chess"),
         with_bottom_line = true,
-        close_callback = function() self:onClose() end,
+        close_callback = function() self:explain("close", function() self:onClose() end) end,
         show_parent = self,
     }
 
