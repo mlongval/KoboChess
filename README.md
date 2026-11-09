@@ -75,6 +75,12 @@ toolchain to build and nothing to cross-compile for the device.
   | **Train ▾** | Puzzles · Puzzle of the day · Famous games · Openings — see [Training](#training) |
   | **Options ▾** | Piece set · Engine · Level · Clock · Screen refresh · Coordinates on/off |
 
+- **Every button explains itself** the first time it is used — Game ▾,
+  Undo, Hint, Flip, Refresh (and holding it), Options ▾, each item of the
+  two menus, New game's choices, and a tap on a clock — in a short dialog
+  with a *Do not show this again* box; the action happens after OK.
+  **Show explanations again** in the device menu (swipe down from the top)
+  brings them all back.
 - **Refresh** clears e-ink ghosting on demand; hold it to set how often the
   board does that by itself (every move … every 12, or never).
 - Two piece sets ship, and **Options → Piece set** switches between them
@@ -543,7 +549,7 @@ kobochess.koplugin/       what gets copied to the device
   chesswidget.lua         the full-screen UI
   chesstrain.lua          training: puzzles, famous games, openings (its own screen)
   chesshelpdialog.lua     the first-use explanation of a button
-  chesshelptext.lua       the explanations
+  chesshelptext.lua       the explanations (board, menus and training)
   boardview.lua           the 8x8 board, painted directly to the blitbuffer
   kobochess/
     board.lua             0x88 board, move generation, make/unmake, FEN

@@ -485,24 +485,38 @@ function ChessWidget:buildLayout()
     -- of height given back to the board, which is the thing worth looking at.
     self.buttons = {}
     local row = self:buildButtonRow({
-        { id = "game",  text = _("Game ▾"), callback = function() self:onGameMenu() end },
+        { id = "game",  text = _("Game ▾"), callback = function()
+            self:explain("game", function() self:onGameMenu() end)
+        end },
         -- Training (puzzles, famous games, openings) opens on a board of its
         -- own, on top of this one; see chesstrain.lua.
         { id = "train", text = _("Train ▾"), callback = function()
             self:explain("train", function() self:onTrainMenu() end)
         end },
-        { id = "undo",  text = _("Undo"),   callback = function() self:onUndo() end, weight = 0.8 },
-        { id = "hint",  text = _("Hint"),   callback = function() self:onHint() end, weight = 0.8 },
-        { id = "flip",  text = _("Flip"),   callback = function() self:onFlip() end, weight = 0.8 },
+        { id = "undo",  text = _("Undo"), weight = 0.8, callback = function()
+            self:explain("undo", function() self:onUndo() end)
+        end },
+        { id = "hint",  text = _("Hint"), weight = 0.8, callback = function()
+            self:explain("hint", function() self:onHint() end)
+        end },
+        { id = "flip",  text = _("Flip"), weight = 0.8, callback = function()
+            self:explain("flip", function() self:onFlip() end)
+        end },
         -- Tap to clear ghosting now, hold to change how often it happens by
         -- itself. Ghosting is the one thing about an e-ink board that a user
         -- can see and the program cannot, so it needs a manual override, and
         -- it stays on the row rather than in a menu because it is the one
         -- thing you reach for while looking at a smeared board.
         { id = "refresh", text = _("Refresh"),
-          callback = function() self:onForceRefresh() end,
-          hold_callback = function() self:onChooseRefreshInterval() end },
-        { id = "options", text = _("Options ▾"), callback = function() self:onOptionsMenu() end, weight = 1.25 },
+          callback = function()
+              self:explain("refresh", function() self:onForceRefresh() end)
+          end,
+          hold_callback = function()
+              self:explain("refresh_interval", function() self:onChooseRefreshInterval() end)
+          end },
+        { id = "options", text = _("Options ▾"), weight = 1.25, callback = function()
+            self:explain("options", function() self:onOptionsMenu() end)
+        end },
     }, margin)
 
     -- The clocks, one at each end of the board, present only when there is a
@@ -863,7 +877,8 @@ function ChessWidget:onTap(_, ges)
     if self.clock and ges.pos
        and (contains(self.clock_far and self.clock_far.dimen, ges.pos)
             or contains(self.clock_near and self.clock_near.dimen, ges.pos)) then
-        return self:onToggleClock()
+        self:explain("clock_tap", function() self:onToggleClock() end)
+        return true
     end
 
     -- Buttons and the title bar are children, so they have already had their
@@ -1253,7 +1268,8 @@ end
 
 --- Show a one-item-per-row dialog. The dialog is a local rather than a field
 -- on the widget, so a callback always closes the dialog it belongs to even if
--- another has been opened since.
+-- another has been opened since. An entry with a `help` key explains itself
+-- the first time it is chosen (chesshelptext.lua), then does its thing.
 function ChessWidget:showMenu(title, entries)
     local dialog
     local buttons = {}
@@ -1263,7 +1279,11 @@ function ChessWidget:showMenu(title, entries)
             enabled = entry.enabled ~= false,
             callback = function()
                 UIManager:close(dialog)
-                entry.callback()
+                if entry.help then
+                    self:explain(entry.help, entry.callback)
+                else
+                    entry.callback()
+                end
             end,
         } }
     end
@@ -1277,7 +1297,7 @@ function ChessWidget:showMenu(title, entries)
 end
 
 --- The first time a button is used, a few words on what it does
--- (chesshelpdialog.lua). Only the training buttons have one so far.
+-- (chesshelpdialog.lua), then fn. Every button and menu item has one.
 function ChessWidget:explain(key, fn)
     self.explained = self.explained or {}
     require("chesshelpdialog").explainOnce(self, self.settings, self.explained, key, fn)
@@ -1337,18 +1357,18 @@ function ChessWidget:onGameMenu()
         and _("Pause clock") or _("Start clock")
     return self:showMenu(_("Game"), {
         { text = _("New game"), enabled = not self.thinking,
-          callback = function() self:onNewGame() end },
+          callback = function() self:onNewGame() end, help = "new_game" },
         { text = clock_text,
           -- Tapping either clock does this too; it is here to be findable.
           enabled = self.clock ~= nil and not self.clock:flaggedSide()
                     and not self.game:isOver(),
-          callback = function() self:onToggleClock() end },
+          callback = function() self:onToggleClock() end, help = "clock_toggle" },
         { text = _("Resign"), enabled = not self.game:isOver(),
-          callback = function() self:onResign() end },
+          callback = function() self:onResign() end, help = "resign" },
         { text = _("Export PGN"),
-          callback = function() self:onExportPgn() end },
+          callback = function() self:onExportPgn() end, help = "export_pgn" },
         { text = _("Copy FEN"),
-          callback = function() self:onCopyFen() end },
+          callback = function() self:onCopyFen() end, help = "copy_fen" },
     })
 end
 
@@ -1358,21 +1378,21 @@ function ChessWidget:onOptionsMenu()
     return self:showMenu(_("Options"), {
         { text = ("%s: %s"):format(_("Piece set"), prettySetName(self.piece_set)),
           enabled = #self.piece_sets > 1,
-          callback = function() self:onChoosePieceSet() end },
+          callback = function() self:onChoosePieceSet() end, help = "piece_set" },
         { text = ("%s: %s"):format(_("Engine"), self.engine:name()),
           enabled = not self.thinking and #self.engine_list > 1,
-          callback = function() self:onChooseEngine() end },
+          callback = function() self:onChooseEngine() end, help = "engine" },
         { text = ("%s: %s"):format(_("Level"), level and level.name or "?"),
           enabled = not self.thinking,
-          callback = function() self:onChooseLevel() end },
+          callback = function() self:onChooseLevel() end, help = "level" },
         { text = ("%s: %s"):format(_("Clock"),
                                    Clock.CONTROLS[self.time_control].name),
-          callback = function() self:onChooseTimeControl() end },
+          callback = function() self:onChooseTimeControl() end, help = "time_control" },
         { text = _("Screen refresh"),
-          callback = function() self:onChooseRefreshInterval() end },
+          callback = function() self:onChooseRefreshInterval() end, help = "refresh_interval" },
         { text = self.show_coordinates and _("Hide coordinates")
                                         or _("Show coordinates"),
-          callback = function() self:onToggleCoordinates() end },
+          callback = function() self:onToggleCoordinates() end, help = "coordinates" },
     })
 end
 
@@ -1408,11 +1428,11 @@ function ChessWidget:onNewGame()
 
     return self:showMenu(_("New game"), {
         { text = _("Play as White"),
-          callback = function() start(Board.WHITE, false) end },
+          callback = function() start(Board.WHITE, false) end, help = "play_side" },
         { text = _("Play as Black"),
-          callback = function() start(Board.BLACK, false) end },
+          callback = function() start(Board.BLACK, false) end, help = "play_side" },
         { text = _("Two players (no engine)"),
-          callback = function() start(Board.WHITE, true) end },
+          callback = function() start(Board.WHITE, true) end, help = "two_players" },
     })
 end
 
