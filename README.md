@@ -6,7 +6,7 @@
 > ⚠️ **Written by an AI, no warranty.** This code was written almost
 > entirely by Claude (Anthropic's AI). It comes with no guarantee of any
 > kind, including fitness for any purpose. It may crash, lose your data,
-> brick your Kobo or make it explode. That would not be my fault. Read the
+> or stop your Kobo from working. That would not be my fault. Read the
 > [disclaimer](https://github.com/mlongval/KoboKit/blob/main/DISCLAIMER.md) and back up your Kobo first.
 
 ![version](https://img.shields.io/badge/version-0.01-c05621?style=flat-square)
